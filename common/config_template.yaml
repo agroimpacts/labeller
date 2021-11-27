@@ -1,0 +1,76 @@
+# The structure of S3 bucket should be 
+# - activemapper
+#   All config files are saved under activemapper
+#   - "classified-images/*" for modeled probability maps 
+#   - "grid" for genneral grid file such as master_grid, study area geojson file
+#   - "labels/*" for binary labels
+#   - "heatmaps/*" for heatmaps of label consensus
+#   - "planet" for any planet related files
+#     All csv files are saved under planet
+learner:
+  aoiid: 1
+  aoiname: ghana
+  aws_access: 
+  aws_region: us-east-1
+  aws_secret: 
+  bucket: activemapper
+  image_catalog: planet/planet_catalog_ghana_1.csv
+  # This is the catalog of images to do prediction. 
+  # Usually it is the same as image_catalog
+  # But could be various for different objectives.
+  image_catalog_predict: planet/planet_catalog_ghana_1.csv
+  image_output_pattern: s3://activemapper/classified-images/ghana_1/image_c{}_r{}_{}_run{}_iteration{}.tif
+  incoming_names: incoming_names_ghana_1.csv
+  # incoming_names_static if for overall sites across the whole area
+  # if there is no any, use incoming_names_static_blank.csv
+  # This file is tricky, before the initial run, the file is in need to prepare ahead
+  # Then run instance with initial mode 1 to prepare these sites
+  # Then run instance with initial mode 3 to do regular iteration
+  incoming_names_static: incoming_names_static_cluster1.csv
+  metrics: incoming_metrics_ghana_1.csv
+  number_outgoing_names: 0
+  outgoing: s3://activemapper/planet/outgoing_names_ghana_1.csv
+  pool: f_pool_ghana_1.csv
+  qs: q_sites_ghana_1.csv
+  prefix: planet
+  runid: 0
+labeller:
+  DEBUG: true
+  ## initial
+  ## 1 for initial sites across the whole study area
+  ## 2 for single independent labelling
+  ## 3 for regular mode
+  initial: true
+  MAIL_PASSWORD:
+  MAIL_PORT: 25
+  MAIL_SERVER: localhost
+  MAIL_USERNAME:
+  MAIL_USE_SSL:
+  MAIL_USE_TLS:
+  PL_API_KEY: 
+  SECRET_KEY: 
+  slack_url: 
+  aws_access: 
+  aws_region: us-east-1
+  aws_secret: 
+  consensus_directory: /labels/ghana/
+  consensus_heatmap_dir: heatmaps/ghana
+  consensus_riskmap_dir:
+  db_host: mapper0.crowdmapper.org
+  db_password: 
+  db_production_name: Africa
+  db_url:
+  db_username: 
+  db_reviewer_email:
+  aoi_s3_object: grid/image_target_aois.geojson
+  master_grid_s3_object: grid/master_grid.tif
+  s3_catalog_name: planet_catalog_ghana_full.csv
+  # This url is the slack app webhooks url to send notification
+  slack_url:
+  # Set last name filter for the noticification.
+  notification_filter: ["Song", "Estes"]
+  github_repo: agroimpacts/issues
+  github_token: 
+  mapping_category1: field
+  mapping_category2:
+  mapping_category3:

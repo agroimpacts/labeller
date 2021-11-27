@@ -1,0 +1,28 @@
+{% extends "common/page_base.html" %}  {# common/page_base.html extends layout.html #}
+
+{% block content %}
+	<div id="contents">
+		<!--<div class="highlight">-->
+			<div class="clearfix">
+				<h1>List Administrators and Employers</h1>
+				<h2>Administrators</h1>
+				<ul>
+                    {% for user in admin_list %}
+                        <li>
+                            {{ user[0] }}, {{ user[1] }} ({{ user[2] }})
+                        </li>
+                    {% endfor %}
+				</ul><br/>
+				<h2>Employers</h2>
+				<ul>
+                    {% for user in employer_list %}
+                        <li>
+                            {{ user[0] }} - Contact: {{ user[1] }}, {{ user[2] }} ({{ user[3] }})
+                        </li>
+                    {% endfor %}
+				</ul>
+			</div>
+		<!--</div>-->
+	</div>
+{% endblock %}
+

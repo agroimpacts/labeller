@@ -1,0 +1,47 @@
+#! /bin/bash
+## Configure elastic IP address for instance
+
+echo "This script is used to backup all contents in /home/mapper/labeller folder in instance" 
+echo "and store them to S3"
+# read -rsp $'Press any key to continue...\n' -n 1
+
+read -p "Enter instance name: " INAME
+if [ -z "$INAME" ]; then
+    printf '%s\n' "An instance name is needed"
+    exit 1
+fi
+echo "Getting public IP for" $INAME
+IID=$(aws ec2 describe-instances --filters 'Name=tag:Name,Values='"$INAME"'' --output text --query 'Reservations[*].Instances[*].InstanceId')
+
+echo "Starting instance named" $INAME "with id" $IID
+aws ec2 start-instances --instance-ids $IID
+
+echo "Wait instance to be established"
+aws ec2 wait instance-running --instance-ids $IID
+
+echo "Getting public ip"
+PUBIP=$(aws ec2 describe-instances --filters 'Name=tag:Name,Values='"$INAME"'' --output text --query 'Reservations[*].Instances[*].PublicIpAddress')
+
+echo "Downloading /home/mapper/labeller into /tmp for " $INAME
+scp -r mapper@$PUBIP:/home/mapper/labeller /tmp/$INAME
+
+echo "Zip folder /tmp/"$INAME
+zip -r /tmp/$INAME.zip /tmp/$INAME 
+
+S3Path=s3://activemapper/backups/instance
+# Move it into S3 bucket
+echo "copying /tmp/" $INAME ".zip to " $S3Path
+aws s3 cp /tmp/$INAME.zip $S3Path/$INAME.zip
+if [[ $? != 0 ]]; then
+     exit 1
+fi
+
+echo "Cleaning up: deleting"/tmp/$INAME.zip "&&" /tmp/$INAME
+rm -f /tmp/$INAME.zip
+rm -rf /tmp/$INAME
+if [[ $? != 0 ]]; then
+    exit 1
+fi  
+
+echo Stopping instance named $INAME with id $IID
+aws ec2 stop-instances --instance-ids $IID

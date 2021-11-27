@@ -1,0 +1,49 @@
+{% extends "common/page_base.html" %}  {# common/page_base.html extends layout.html #}
+
+{% block content %}
+	<div id="contents">
+		<div class="highlight">
+			<div class="clearfix">
+                <span class="mapbody">
+                    <div class="trainhdr">
+                        <h3 class="maph3">Mapping Africa Project: Training Video</h3>
+                    </div>
+                    <div style="text-align:center;">
+                        <p>
+                            The video below provides an overview of the Mapping Africa project and qualification test.<br/>
+                            Please click the play button to watch this video, and then watch the training video below this one.<br/>
+                            For additional information on the project for mapping effort and quality,<br/>
+                            please visit the <a href="http://mappingafrica.princeton.edu" target="_blank">project website</a>.
+                            (Please wait a few moments for video to load.)
+                        </p>
+
+                        <object width="{{ form.introWidth.data }}" height="{{ form.introHeight.data }}">
+                            <param name="movie" value="{{ form.introUrl.data }}">
+                            <embed src="{{ form.introUrl.data }}" width="{{ form.introWidth.data }}" height="{{ form.introHeight.data }}">
+                            </embed>
+                        </object>
+
+                        <p>
+                            <br/>
+                            Please view the training video below where you will learn how to map and identify agricultural fields.<br/>
+                            (Please wait a few moments for video to load.)
+                        </p>
+
+                        <object width="{{ form.instructionalWidth.data }}" height="{{ form.instructionalHeight.data }}">
+                            <param name="movie" value="{{ form.instructionalUrl.data }}">
+                            <embed src="{{ form.instructionalUrl.data }}" width="{{ form.instructionalWidth.data }}" 
+                                    height="{{ form.instructionalHeight.data }}">
+                            </embed>
+                        </object>
+
+                        <p>
+                            <br/>
+                            Once you have viewed these videos, hover over the Employee menu item above,<br/>
+                            and click on Take Qualification Test.
+                        </p>
+                    </div>
+                </span>
+			</div>
+		</div>
+	</div>
+{% endblock %}

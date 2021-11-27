@@ -1,0 +1,154 @@
+{% extends "common/page_base.html" %}  {# common/page_base.html extends layout.html #}
+
+{% block content %}
+    {% if form.timeZone.data is none %}
+        <script type="text/javascript">
+            $(document).ready(function() {
+                var workerTime = new Date();
+                var workerTimezone = workerTime.getTimezoneOffset();
+                document.tzform.timeZone.value = workerTimezone;
+                document.tzform.submit();
+            });
+        </script>
+        <form name='tzform' action='{{ form.submitTo.data }}' method='POST'>
+            <!-- Add the hidden URL-encoded csrf_token -->
+            {{ form.hidden_tag() }}
+            <input type='hidden' name='timeZone' />
+        </form>
+    {% else %}
+        <script type="text/javascript">
+            // Handle worker inquiries here.
+            function getMessage(inquiryId) {
+                if  ({{ form.prompt.data|tojson }}) {
+                    do {
+                        var inquiryMessage = prompt("Please provide details regarding this inquiry (required)", "");
+                        if (inquiryMessage == null) {
+                            return;
+                        }
+                    } while (inquiryMessage == "");
+                } else {
+                    inquiryMessage = "";
+                }
+                jQuery.ajax({
+                    type: "POST",
+                    url: '{{ form.submitTo.data }}',
+                    data: { 
+                        inquiryId: inquiryId,
+                        inquiryMessage: inquiryMessage
+                    },
+                    dataType: "text",
+                    success: function(response){
+                        //confirm(response);
+                        document.getElementById("dialog").innerHTML = response;
+                        $("#dialog").dialog({
+                            modal: true,
+                            autoOpen: false,
+                            width: 600
+                        });
+                        $('#dialog').dialog('open');
+                    }
+                });
+            }
+            // Handle pagination here.
+            var jq = $.noConflict();
+            jq(document).ready(function(){
+                function paginate(options) {
+                    // Grab whatever we need to paginate
+                    var items = $(options.itemSelector);
+                    // How many items do we have?
+                    var numItems = items.length;
+                    // How many parts do we want per page?
+                    var perPage = options.itemsPerPage;
+
+                    // When the document loads we're on page 1
+                    // So to start with... hide everything else
+                    items.slice(perPage).hide();
+                    // Apply simplePagination to our placeholder
+                    $(options.paginationSelector).pagination({
+                        items: numItems,
+                        itemsOnPage: perPage,
+                        cssStyle: "light-theme",
+                        // We implement the actual pagination
+                        //   in this next function. It runs on
+                        //   the event that a user changes page
+                        onPageClick: function(pageNum) {
+                            // Which page parts do we show?
+                            var start = perPage * (pageNum - 1);
+                            var end = start + perPage;
+
+                            // First hide all page parts
+                            // Then show those just for our page
+                            items.hide()
+                                     .slice(start, end).show();
+                        }
+                    });
+                }
+                // Activate assignment paginator
+                paginate({
+                    itemSelector: ".paginate",
+                    paginationSelector: "#page-nav",
+                    itemsPerPage: 10
+                });
+                // Activate bonus paginator
+                paginate({
+                    itemSelector: ".paginate2",
+                    paginationSelector: "#page-nav2",
+                    itemsPerPage: 5
+                });
+            });
+        </script>
+        <!-- Modal box div element used to display responses to worker inquiries -->
+        <div id="dialog" title="Response to your inquiry" style="display:none;"></div>
+
+        <div id="contents">
+            <div class="highlight">
+                <div class="clearfix">
+                    <span class="mapbody">
+                        <div class="trainhdr">
+                            <h3 class="maph3">Your Assignment History</h3>
+                        </div>
+                        <h4>Assignments</h4>
+                        <form style='width:100%%;' name='assignhistform' action='{{ form.submitTo.data }}' method='POST'>
+                            <!-- Add the hidden URL-encoded csrf_token -->
+                            {{ form.hidden_tag() }}
+                            <table class="histTable">
+                                <tr>
+                                    <th>Ask</th><th>Date</th><th>Event</th><th align="right">Points</th><th>System Message</th>
+                                </tr>
+                                {% for row in form.assignmentData.data %}
+                                    <tr class="paginate">
+                                        <td><button class="unstyled-button" onclick='getMessage("{{row[4]}}")' type="button">
+                                                <img src="{{ url_for('static', filename='images/info-24.png') }}" 
+                                                alt="i" title="Click to create a worker inquiry showing your map in relation to ours (if one exists)." height="24" width="24">
+                                        </button></td>
+                                        <td width="140px">{{row[0]}}</td><td width="150px">{{row[1]}}</td>
+                                        <td align="right">{{row[2]}}</td><td>{{row[3]}}</td>
+                                    </tr>
+                                {% endfor %}
+                            </table>
+                            <div id="page-nav"></div>
+                        </form>
+                        <hr>
+                        <h4>Bonuses</h4>
+                        <form style='width:100%%;' name='bonushistform' action='{{ form.submitTo.data }}' method='POST'>
+                            <!-- Add the hidden URL-encoded csrf_token -->
+                            {{ form.hidden_tag() }}
+                            <table class="histTable">
+                                <tr>
+                                    <th>Date</th><th>Event</th><th align="right">Points</th><th>System Message</th>
+                                </tr>
+                                {% for row in form.bonusData.data %}
+                                    <tr class="paginate2">
+                                        <td width="140px">{{row[0]}}</td><td width="100px">{{row[1]}}</td>
+                                        <td align="right">{{row[2]}}</td><td>{{row[3]}}</td>
+                                    </tr>
+                                {% endfor %}
+                            </table>
+                            <div id="page-nav2"></div>
+                        </form>
+                    </span>
+                </div>
+            </div>
+        </div>
+    {% endif %}
+{% endblock %}

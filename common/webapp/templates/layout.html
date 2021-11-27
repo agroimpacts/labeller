@@ -1,0 +1,206 @@
+<html lang="en">
+    <head>
+        <!-- These 3 meta tags MUST come first -->
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <!-- These 3 meta tags MUST come first -->
+        <meta http-equiv="refresh" content="{{ current_user.sessionLifetime }}; url={{ url_for('user.logout') }}">
+
+        <title>{{ user_manager.app_name }}</title>
+
+        <!-- Bootstrap CSS and JS -->
+        <link href="{{ url_for('static', filename='bootstrap/css/bootstrap.min.css') }}" rel="stylesheet">
+        <link href="{{ url_for('static', filename='bootstrap/css/jquery-ui.min.css') }}" rel="stylesheet">
+        <link href="{{ url_for('static', filename='bootstrap/css/simplePagination.css') }}" rel="stylesheet">
+
+        <!-- HTML5 shim and Respond.js for IE8 support of HTML5 elements and media queries -->
+        <!-- WARNING: Respond.js doesn't work if you view the page via file:// -->
+        <!--[if lt IE 9]>
+            <script src="{{ url_for('static', filename='bootstrap/js/html5shiv.min.js') }}"></script>
+            <script src="{{ url_for('static', filename='bootstrap/js/respond.min.js') }}"></script>
+        <![endif]-->
+
+        <!-- Application specific CSS-->
+        <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+        <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+
+        <!-- This next jquery link is needed> -->
+        <script src="https://code.jquery.com/jquery-3.3.1.min.js"
+            integrity="sha256-FgpCb/KJQlLNfOu91ta32o/NMZxltwRo8QtmkMRdAu8="
+            crossorigin="anonymous">
+        </script>
+
+        <script>
+            $(document).ready(function(){
+                onPageLoad();
+            });
+            function onPageLoad(){
+                // Set menu or submenu link active on current page. Remains active 
+                // until page is refreshed with page clicked on in menu/submenu.
+                // For submenu item, also causes submenu to be displayed.
+                $('.navigation li > a').click(function() {
+                    $(this).addClass("active");
+                });
+                $('.navigation li > div > a').click(function() {
+                    $(this).addClass("active");
+                    $(this).parent().css('display', 'block');
+                });
+
+                // Set link active on final destination page (after refresh).
+                // NOTE: this script assumes that a user has only one role.
+                // It allows a submenu item to be the same link as a menu item.
+                // It handles redirects by the link specified in the submenu.
+                // It handles the same link appearing in more than one column.
+                var pathname = document.location.pathname;
+                var role = $("input[name='role']").attr('value');
+                // console.log('pathname =', pathname, ', role =', role);
+                found = false;
+                $('.navigation li').each(function (i, li) {
+                    atag = $(li).children("a");
+                    var href = $(atag).attr('href');
+                    var ttext = $(atag).text();
+                    // console.log('href =', href, ', text =', ttext);
+                    if (pathname == href) {
+                        found = true;
+                    }
+                    // Check if menu item is somewhere in the current column.
+                    // Supports role-specific columns and the profile column.
+                    var lastpath = href.substr(href.lastIndexOf('/') + 1);
+                    var matches_col = lastpath == role || lastpath == 'profile';
+                    // Set currently selected sub-menu item active (e.g., /employer/employee_invite).
+                    $(li).children('div').children('a').each(function (ii, subatag) {
+                        href = $(subatag).attr('href');
+                        title = $(subatag).attr('title');
+                        // console.log('href =', href, ', title =', title, 'matches_col =', matches_col);
+                        // For sub-menu items that redirect, use the title tag to identify the final destination.
+                        if ((pathname == href || pathname == title) && matches_col) {
+                            $(subatag).addClass('active');
+                            // Display sub-menu for 5 seconds if not the result of a POST.
+                            // console.log('req_method =', req_method);
+                            if (typeof req_method === 'undefined' || req_method != 'POST') {
+                                $(li).children('div').css('display', 'block');
+                                setTimeout(function(){ $(li).children('div').css('display', '') }, 5000);
+                            }
+                            found = true;
+                            return !found;
+                        }
+                    })
+                    if (found) {
+                        // Set currently selected menu item active (e.g., /employer).
+                        $(atag).addClass('active');
+                        return !found;
+                    }
+                })
+            }
+        </script>
+    </head>
+    <body>
+        {% block body %}
+        <!-- Application specific HTML -->
+		<div id="header">
+			<div class="clearfix">
+                <div class="logo">
+                    <!--<a href="http://www2.clarku.edu/"><img src="{{ url_for('static', filename='images/header_bg_tiny.jpg') }}" alt="LOGO" height="52" width="140" style="padding:1px; border:1px solid #021a40; background-color:#fff;"></a>-->
+                    <!--<a href="http://www2.clarku.edu/"><img src="{{ url_for('static', filename='images/logo1.png') }}" alt="LOGO" height="139" width="142" style="padding:1px; border:1px solid #b8c6ac;"></a>-->
+                    <a href="http://www2.clarku.edu/"><img src="{{ url_for('static', filename='images/logo1.png') }}" alt="LOGO" height="54" width="55" style="padding:1px;"></a>
+
+                </div>
+                <div class="banner">
+                    <h2>Agricultural<br>Mapping Platform</h2>
+                </div>
+                <ul class="navigation">
+                    <li>
+                        <a href={{ url_for('main.home_page') }}>{%trans%}Home{%endtrans%}</a>
+                    </li>
+                    <li>
+                        <a href={{ url_for('main.admin_page') }}>{%trans%}Administrator{%endtrans%}</a>
+                        <div>
+                            <a href={{ url_for('main.list_admins_employers') }} }}>{%trans%}List Administrators/Employers{%endtrans%}</a>
+                            <a href={{ url_for('main.list_employees_by_admin') }} }}>{%trans%}List Employees{%endtrans%}</a>
+                            <a href={{ url_for('main.admin_employer_invite') }} title={{ url_for('user.invite') }}>{%trans%}Invite Administrator/Employer{%endtrans%}</a>
+                            <a href={{ url_for('main.suspend_admin_employer_employee') }}>{%trans%}Suspend/Reactivate User{%endtrans%}</a>
+                       </div> 
+                    </li>
+                    <li>
+                        <a href={{ url_for('main.employer_page') }}>{%trans%}Employer{%endtrans%}</a>
+                        <div>
+                            <a href={{ url_for('main.list_employees_by_employer') }} }}>{%trans%}List Employees{%endtrans%}</a>
+                            <a href={{ url_for('main.employee_invite') }} title={{ url_for('user.invite') }}>{%trans%}Invite Employee{%endtrans%}</a>
+                            <a href={{ url_for('main.suspend_employee') }}>{%trans%}Suspend/Reactivate Employee{%endtrans%}</a>
+                       </div> 
+                    </li>
+                    <li>
+                        <a href={{ url_for('main.employee_page') }}>{%trans%}Employee{%endtrans%}</a>
+                        <div>
+                            <a href={{ url_for('map_blueprint.assignment') }} }}>{%trans%}Map Agricultural Fields{%endtrans%}</a>
+                            <a href={{ url_for('hist_blueprint.assignment_history') }}>{%trans%}View Assignment History{%endtrans%}</a>
+                            <a href={{ url_for('main.training') }}>{%trans%}View Training Video{%endtrans%}</a>
+                            <a href={{ url_for('qual_blueprint.qualification') }}>{%trans%}Take Qualification Test{%endtrans%}</a>
+                       </div> 
+                    </li>
+                    <li>
+                        {% if current_user.is_authenticated %}
+                            <!-- Insert the current user's role into this page for use by jQuery menu code above -->
+                            <input type="hidden" name="role" value="{{ current_user.get_roles_string() }}"> 
+                            <a href="{{ url_for('main.user_profile') }}">Profile</a>
+                            <div>
+                                <a href="{{ url_for('main.user_profile') }}">User Profile</a>
+                                <a href="{{ url_for('user.logout') }}">Sign out</a>
+                            </div>
+                        {% else %}
+                            <a href="{{ url_for('user.login') }}">Sign in</a>
+                        {% endif %}
+                    </li>
+                </ul>
+			</div>
+		</div>
+        <!--<hr class="no-margins"/>-->
+
+        <div id="main-div" class="no-margins">
+        {% block pre_content %}{% endblock %}
+
+        {# One-time system messages called Flash messages #}
+        {% block flash_messages %}
+            {%- with messages = get_flashed_messages(with_categories=true) -%}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        {% if category=='error' %}
+                            {% set category='danger' %}
+                        {% endif %}
+                        <div class="alert alert-{{category}}">{{ message|safe }}</div>
+                    {% endfor %}
+                {% endif %}
+            {%- endwith %}
+        {% endblock %}
+
+        {% block content %}{% endblock %}
+
+        {% block post_content %}{% endblock %}
+        </div>
+
+        <!-- <hr class="no-margins"/> -->
+        <div id="footer-div" class="clearfix with-margins">
+            <div class="pull-left">{{ user_manager.app_name }} v1.0</div>
+            <div class="pull-right">&copy; 2018 Agricultural Impacts Research Group</div>
+        </div>
+
+        <!-- Bootstrap JS -->
+        <script src="{{ url_for('static', filename='bootstrap/js/jquery.min.js') }}"></script>
+        <script src="{{ url_for('static', filename='bootstrap/js/jquery-ui.min.js') }}"></script>
+        <script src="{{ url_for('static', filename='bootstrap/js/bootstrap.min.js') }}"></script>
+        <script src="{{ url_for('static', filename='bootstrap/js/jquery.simplePagination.js') }}"></script>
+
+        <!-- Optional Google Analytics: change UA-XXXXX-X to be your site's ID.
+        <script>
+            (function(b,o,i,l,e,r){b.GoogleAnalyticsObject=l;b[l]||(b[l]=
+            function(){(b[l].q=b[l].q||[]).push(arguments)});b[l].l=+new Date;
+            e=o.createElement(i);r=o.getElementsByTagName(i)[0];
+            e.src='https://www.google-analytics.com/analytics.js';
+            r.parentNode.insertBefore(e,r)}(window,document,'script','ga'));
+            ga('create','UA-XXXXX-X','auto');ga('send','pageview');
+        </script>
+        -->
+        {% endblock %}
+    </body>
+</html>
