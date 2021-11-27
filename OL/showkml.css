@@ -1,0 +1,35 @@
+html, body {
+    font-family: 'Lato', sans-serif;
+    font-weight: 300; 
+    width: 100%;
+    margin: 0;
+    padding: 0;
+}
+.instructions {
+    font-size:9pt;
+    font-family:arial;
+    font-weight:bold;
+    text-align:center;
+    margin: 5px 0 5px 0;
+}
+.comments {
+    font-size:10pt;
+    font-family:arial;
+    margin: 0;
+}
+.hints {
+    font-size:10pt;
+    font-family:arial;
+    text-align:center;
+    color: blue;
+    margin: 0 0 5px 0;
+}
+.olControlEditingToolbar .saveButtonItemInactive {
+    background-image: url("img/save_layer_inactive.png");
+}
+.ol-mouse-position {
+    color: white;
+}
+#labelBlock {
+    font-size:small;
+}
