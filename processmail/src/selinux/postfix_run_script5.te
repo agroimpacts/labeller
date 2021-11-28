@@ -1,0 +1,11 @@
+
+module postfix_run_script5 1.0;
+
+require {
+	type httpd_sys_content_t;
+	type postfix_local_t;
+	class dir add_name;
+}
+
+#============= postfix_local_t ==============
+allow postfix_local_t httpd_sys_content_t:dir add_name;

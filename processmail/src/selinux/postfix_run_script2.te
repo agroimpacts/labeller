@@ -1,0 +1,15 @@
+
+module postfir_run_script2 1.0;
+
+require {
+	type httpd_sys_content_t;
+	type postfix_local_t;
+	type httpd_sys_rw_content_t;
+	class dir write;
+	class file { read write };
+}
+
+#============= postfix_local_t ==============
+allow postfix_local_t httpd_sys_content_t:dir write;
+allow postfix_local_t httpd_sys_content_t:file write;
+allow postfix_local_t httpd_sys_rw_content_t:file read;

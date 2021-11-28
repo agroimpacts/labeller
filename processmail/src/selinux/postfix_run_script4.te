@@ -1,0 +1,16 @@
+
+module postfix_run_script4 1.0;
+
+require {
+	type httpd_sys_content_t;
+	type postfix_local_t;
+	type httpd_sys_rw_content_t;
+	class file { append getattr };
+}
+
+#============= postfix_local_t ==============
+allow postfix_local_t httpd_sys_content_t:file append;
+
+#!!!! The file '/var/www/html/afmap_sandbox/mturk/MTurkMappingAfrica.pyc' is mislabeled on your system.  
+#!!!! Fix with $ restorecon -R -v /var/www/html/afmap_sandbox/mturk/MTurkMappingAfrica.pyc
+allow postfix_local_t httpd_sys_rw_content_t:file getattr;

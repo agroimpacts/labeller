@@ -1,0 +1,13 @@
+
+module postfix_run_script 1.0;
+
+require {
+	type httpd_sys_content_t;
+	type postfix_local_t;
+	class dir getattr;
+	class file ioctl;
+}
+
+#============= postfix_local_t ==============
+allow postfix_local_t httpd_sys_content_t:dir getattr;
+allow postfix_local_t httpd_sys_content_t:file ioctl;
