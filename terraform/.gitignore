@@ -1,0 +1,4 @@
+.terraform*
+terraform.tfstate*
+emr.tf
+variables.tf
