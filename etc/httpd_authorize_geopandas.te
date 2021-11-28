@@ -1,0 +1,26 @@
+
+module httpd_authorize_geopandas 1.0;
+
+require {
+	type httpd_tmp_t;
+	type lib_t;
+	type httpd_t;
+	type user_home_dir_t;
+	type cache_home_t;
+	class dir { setattr write };
+	class file execute;
+}
+
+#============= httpd_t ==============
+
+#!!!! This avc is allowed in the current policy
+allow httpd_t cache_home_t:dir write;
+
+#!!!! This avc is allowed in the current policy
+allow httpd_t httpd_tmp_t:file execute;
+
+#!!!! This avc is allowed in the current policy
+allow httpd_t lib_t:dir setattr;
+
+#!!!! This avc is allowed in the current policy
+allow httpd_t user_home_dir_t:dir write;

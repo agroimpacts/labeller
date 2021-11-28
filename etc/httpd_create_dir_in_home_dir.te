@@ -1,0 +1,13 @@
+
+module httpd_create_dir_in_home_dir 1.0;
+
+require {
+	type httpd_t;
+	type user_home_t;
+	class dir create;
+}
+
+#============= httpd_t ==============
+
+#!!!! This avc is allowed in the current policy
+allow httpd_t user_home_t:dir create;

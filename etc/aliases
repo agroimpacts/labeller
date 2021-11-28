@@ -1,0 +1,12 @@
+# --------------------------------------
+# --------------------------------------
+# mapper.princeton.edu traffic routing
+
+#create_alert_issue: "| /home/mapper/labeller/processmail/bin/processmail --user mapper --umask 007 --script /home/mapper/labeller/common/create_alert_issue.py"
+#create_sandbox_alert_issue: "| /home/sandbox/labeller/processmail/bin/processmail --user sandbox --umask 007 --script /home/sandbox/labeller/common/create_alert_issue.py"
+
+# --------------------------------------
+processmail_test1: "| /home/sandbox/labeller/processmail/src/processmail_test.sh"
+processmail_test2: "| /home/sandbox/labeller/processmail/bin/processmail --user sandbox --umask 007 --script /home/sandbox/labeller/processmail/src/processmail_test.sh"
+
+agroimpacts:    lestes@clarku.edu
