@@ -1,0 +1,176 @@
+---
+output: html_document
+---
+
+<style>
+.html-widget {
+    margin: auto;
+}
+</style>
+
+# Check worker maps against Planet imagery
+
+Run this notebook to inspect worker accuracy
+
+### Arguments
+```{r}
+host <- "labeller"  # change this to match your hostname
+read_dbase <- TRUE  # grab updated data? TRUE of FALSE
+new_sample <- TRUE  # randomly draw assignment (TRUE), keep previous (FALSE)
+dbase <- "Africa"  # which database? Africa or AfricaSandbox
+```
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+connect <- read_dbase | new_sample
+library(rmapaccuracy)
+library(dplyr)
+library(sf)
+```
+
+```{r, message=FALSE, warning=FALSE, eval=connect, echo=FALSE}
+host <- paste0(host, ".crowdmapper.org")
+coninfo <- mapper_connect(host, user = "mapper")
+con <- coninfo$con
+# if(dbase == "Africa") {
+#   con <- DBI::dbConnect(RPostgreSQL::PostgreSQL(), host = host,
+#                         dbname = "Africa", user = coninfo$dinfo$user, 
+#                         password = coninfo$dinfo$password)
+# } else if(dbase == "AfricaSandbox") {
+#   con <- coninfo$con
+# }
+```
+
+### Read in Database
+```{r, eval = read_dbase, echo = FALSE}
+assignments <- tbl(con, "assignment_data") %>%
+  filter(!is.null(completion_time)) %>% collect()
+hits <- tbl(con, "hit_data") %>% collect()
+kml_data <- tbl(con, "kml_data") %>% collect()
+categories <- tbl(con, "categories") %>% collect()
+# kml_data %>% arrange(desc(mapped_count))
+
+kml_assn_hits <- left_join(assignments, hits, by = "hit_id") %>%
+  select(assignment_id, name, worker_id) %>%
+  left_join(., kml_data %>% select(name, kml_type), by = "name")
+
+nms <- kml_assn_hits %>% pull(name)
+grids <- tbl(con, "master_grid") %>%
+  filter(name %in% nms)  %>% select(id, name, x, y, avail) %>%
+  collect()
+
+# getwd()
+# dir(paste0(getwd(), "/spatial/data/test/"))
+umaps <- here::here("spatial/data/test/inspect_user_maps.rda")
+save(grids, kml_assn_hits, file = umaps)
+```
+
+```{r, eval=TRUE, echo=FALSE}
+if(read_dbase) print("Database Read")
+if(!read_dbase) {
+  print("Assignments Read")
+  load(umaps)
+}
+```
+
+### Random assignment sampled
+```{r, echo = FALSE, eval = new_sample}
+# select out site at random
+i <- sample(1:nrow(kml_assn_hits), size = 1)
+grid_sel <- kml_assn_hits %>% slice(i) %>%
+  select(assignment_id, name, worker_id) %>%
+  left_join(., grids, by = "name") %>% data.table::data.table(.)
+
+gcs <- "+proj=longlat +datum=WGS84 +no_defs"
+gpoly <- point_to_gridpoly(grid_sel, w = 0.005 / 2, gcs, gcs)
+
+# pick up fields for assignment
+sqls <- paste0("select name, category, geom_clean",
+               " FROM user_maps INNER JOIN categories ",
+               "USING (category) where assignment_id='",
+               grid_sel$assignment_id, "' ",
+               "AND categ_group ='field'")
+fields <- DBI::dbGetQuery(con, gsub(", geom_clean", "", sqls))
+if(nrow(fields) > 0) {
+  user_polys <- st_read(con, query = sqls)
+} else {
+  user_polys <- NULL
+}
+
+# scene
+gid <- grid_sel$id
+scene <- tbl(con, "scenes_data") %>% filter(cell_id == gid) %>%
+  collect()
+grid_selo <- cbind(grid_sel, 
+                   "OS" = scene %>% filter(season == "OS") %>% pull(tms_url), 
+                   "GS" = scene %>% filter(season == "GS") %>% pull(tms_url))
+
+# keep record of selected files
+f <- here::here("spatial/data/test/qsites_digitization_tests.csv")
+data.table::fwrite(grid_selo, file = f, append = TRUE)
+save(scene, user_polys, gpoly, grid_sel, 
+     file = here::here("spatial/data/test/inspect_user_maps_data.rda"))
+```
+
+```{r, eval=TRUE, echo=FALSE, results="markup"}
+if(new_sample) {
+  print(paste0("Selected new assignment: ", 
+               grid_sel$assignment_id, "; ", grid_sel$name))
+}
+if(!new_sample) {
+  load("../data/test/inspect_user_maps_data.rda")
+  print(paste0("Re-visiting previous assignment ", 
+               grid_sel$assignment_id, "; ", grid_sel$name))
+}
+```
+
+```{r, echo = FALSE, fig.align="center"}
+library(leaflet)
+falseparm <- "&redBand=3&greenBand=2&blueBand=1"
+xyz <- list("OS" = scene %>% filter(season == "OS") %>% pull(tms_url),
+            "GS" = scene %>% filter(season == "GS") %>% pull(tms_url))
+xyz <- c(xyz, lapply(xyz, function(x) paste0(x, falseparm)))
+names(xyz)[3:4] <- paste0(names(xyz)[3:4], "F")
+xyz <- xyz[c("OS", "OSF", "GS", "GSF")]
+
+# plotting options
+slist <- list("color" = "white")
+label_opts <- labelOptions(noHide = TRUE, style = slist, direction = 'top',
+                           textOnly = TRUE)
+# pal <- colorFactor(palette = 'Dark2', domain = user_polys$category)
+# cols <- topo.colors(7)[which(cats %in% user_polys$category)]
+
+# colorFactor(topo.colors(5), countries$category)
+
+# gpoly <- rmapaccuracy::point_to_gridpoly(nm, w = 0.005 / 2, gcs, gcs)
+xy <- rgeos::gCentroid(as(raster::extent(gpoly), "SpatialPolygons"))@coords
+m <- leaflet() %>% addProviderTiles("Esri.WorldImagery") %>%
+  setView(xy[, "x"], xy[, "y"], zoom = 14)
+for(i in 1:length(xyz)) m <- m %>% addTiles(xyz[[i]], group = names(xyz)[i])
+m <- m %>%
+  addPolygons(data = gpoly, fill = FALSE, color = "white", group = "Cell",
+              weight = 2)
+if(!is.null(user_polys)) {
+  cols <- topo.colors(7)[which(categories$category %in% user_polys$category)]
+  pal <- colorFactor(cols, domain = categories$category)
+  m <- m %>% addPolygons(data = user_polys, fillOpacity = 0.8, 
+                         fillColor = ~pal(category), 
+                         color = "grey", group = "Maps", weight = 1)
+} else {
+  m <- m
+}
+m <- m %>% addLabelOnlyMarkers(xy[, "x"], xy[, "y"], label = gpoly$name,
+                               labelOptions = label_opts) %>%
+  addLayersControl(overlayGroups = c("Cell", "Maps", names(xyz)),
+                   options = layersControlOptions(collapsed = FALSE,
+                                                  autoZIndex = FALSE))
+m
+
+```
+
+```{r, eval = read_dbase, echo = FALSE}
+DBI::dbDisconnect(con)
+# lapply(DBI::dbListConnections(RPostgreSQL::PostgreSQL()), DBI::dbDisconnect)
+```
+
+
+
+

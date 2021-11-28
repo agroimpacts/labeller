@@ -1,0 +1,146 @@
+# Create AOI and tile grids
+
+To provide a 1 degree reference grid for setting up mapper instances (AOIs) and a 0.05 degree tile for creating image composites, two grids are made to align with the original `master_grid`.  
+
+## Load in data sets
+```{r, eval = FALSE}
+# super cells, aois for Africa and Ghana
+library(raster)
+library(sf)
+library(dplyr)
+library(ggplot2)
+library(data.table)
+
+# res <- 0.005
+# res_aoi <- 1
+# res_imgtile <- 0.05
+# num_supergrid <- res_supergrid / res
+
+# master_grid_path <- file.path("/vsis3/activemapper/grid/master_grid.tif")
+master_grid <- raster("spatial/data/processed/master_grid.tif")
+africa <- st_read("spatial/data/external/africa_noisl_gcs.sqlite") %>%
+  st_sf(crs = 4326)
+africa_cont <- africa %>% st_union %>% st_sf
+ghana <- africa %>% filter(country == "Ghana") %>% select(GEOMETRY) %>%
+  st_sf(crs = 4326)
+```
+
+## Define AOI and tile rasters
+ 
+AOIs are 1 degree and tiles are 0.05 degree. Make two aggregations for super cells and AOIs based on extent of `master_grid`. The tiles are numbered per cell, so each tile in a single AOI cell is number N + 1:400, where N is the last tile ID from the previous AOI cell. 
+
+```{r, eval = FALSE}
+# start with AOIs (1X1 degree)
+e <- extent(master_grid)
+e2 <- c(e@xmin, e@xmin + ceiling(e@xmax - e@xmin),
+        e@ymax - ceiling(e@ymax - e@ymin), e@ymax)  # adjust extent edges
+aois <- raster(extent(e2), res = 1) %>% setValues(., 1)
+extract(aois, africa_cont, weights = TRUE, cellnumbers = TRUE) %>%
+  as.data.frame %>% as_tibble %>% filter(weight > 0) %>%
+  mutate(aoi = 1:nrow(.)) -> iwhichs  # cells intersecting continent edge
+aois[which(!1:ncell(aois) %in% iwhichs$cell)] <- NA  # mask others out
+aois[iwhichs$cell] <- iwhichs$aoi
+
+# disggregate to tile scale
+tiles <- disaggregate(aois, fact = 20)
+tiles_aois <- tiles
+tiles_dt <- tibble(cell = 1:ncell(tiles), aoi = values(tiles)) %>% na.omit() %>%
+  mutate(tile = aoi) %>% as.data.table
+
+# number tiles by row and column within each AOI. In data.table for speed
+cnter <- 0
+for(i in unique(tiles_dt$aoi)) {
+  v <- ((cnter):(tiles_dt[aoi == i, .N] + cnter - 1) + 1)
+  tiles_dt[aoi == i, tile := v]
+  cnter <- tiles_dt[aoi == i, max(tile)]
+}
+tiles[tiles_dt$cell] <- tiles_dt$tile  # assign tile number to raster
+```
+
+```{r, echo = FALSE, eval = FALSE}
+check
+j <- 1000
+tiles_dt %>% filter(aoi %in% j) %>% tail %>% slice(6)
+tiles_dt %>% filter(aoi == j + 1) %>% head %>% slice(1)
+tiles_dt %>% filter(aoi == j + 1) %>% tail %>% slice(6)
+tiles_dt %>% filter(aoi == j + 2) %>% head %>% slice(1)
+```
+
+## Convert to `sf` for Ghana
+
+Where the tiles interesting Ghana are converted to polygons with a field recording both the AOI and the tile IDs. 
+```{r, eval = FALSE}
+tiles_stack <- stack(tiles_aois, tiles)
+names(tiles_stack) <- c("aoi", "tile")
+
+# cut down tiles to Ghana
+ghana_tiles <- crop(tiles_stack, ghana) %>% rasterToPolygons(.) %>%
+  st_as_sf(.) %>% st_sf(crs = 4326)
+st_intersects(ghana, ghana_tiles)[[1]] %>% slice(ghana_tiles, .) -> ghana_tilesr
+# ghana_tilesr[1] %>% st_geometry %>% plot
+# plot(ghana, add = TRUE, col = "red")
+```
+
+## Plot
+```{r, eval = FALSE}
+ghana_aois <- ghana_tilesr %>% pull(aoi) %>% unique
+aois_sf <- rasterToPolygons(aois) %>% st_as_sf %>% rename(aoi = layer) %>%
+  st_sf(crs = 4326)
+
+ind <- 26  # index of selected AOI for plotting (from ghana_aois)
+
+xylims <- st_coordinates(ghana)
+maprange <-  c(range(xylims[, 1]), range(xylims[, 2]))
+
+p1 <- ggplot(africa) + geom_sf(fill = "gray97") +
+  geom_sf(data = ghana, fill = "grey85") +
+  geom_sf(data = aois_sf %>% filter(aoi %in% ghana_aois),
+          fill = "transparent") +
+  geom_sf(data = aois_sf %>% filter(aoi == ghana_aois[ind]), fill = "gray70") +
+  coord_sf(xlim = maprange[1:2], ylim = maprange[3:4]) +
+  theme_void()
+p1
+
+# ints <- st_contains(ghana_aois[5, ], super_cellsr)[[1]]
+xylims <- aois_sf %>% filter(aoi %in% ghana_aois[c(ind:27, 31:32)]) %>%
+  st_coordinates(.)
+maprange <-  c(range(xylims[, 1]), range(xylims[, 2]))
+
+tile_sel <- ghana_tilesr %>% filter(aoi == ghana_aois[ind])  # selected tile
+p2 <- ggplot(ghana) + geom_sf(fill = "grey85") +
+  geom_sf(data = aois_sf, fill = "transparent") +
+  geom_sf(data = tile_sel, fill = "gray70") +
+  geom_sf(data = tile_sel %>% slice(1), fill = "red3") +
+  coord_sf(xlim = maprange[1:2], ylim = maprange[3:4]) +
+  theme_void()
+p2
+
+gpols <- crop(master_grid, tile_sel[1, ]) %>% rasterToPolygons(.) %>%
+  st_as_sf %>% st_sf(crs = 4326)
+p3 <- ggplot(tile_sel %>% slice(c(1:2, 21:22))) +
+  geom_sf(fill = "grey80") +
+  # geom_sf(data = super_cellsr %>% slice(ints[1]), fill = "grey60") +
+  geom_sf(data = gpols, fill = "red3") +
+  theme_void()
+p3
+
+p4 <- cowplot::plot_grid(p1, p2, p3, nrow = 1, scale = c(1, 1, 0.7))
+ggsave("spatial/notebooks/figures/aois_tiles.png", width = 7, height = 3, 
+       units = "in", dpi = 300)
+```
+
+```{r, echo=FALSE, out.width="100%"}
+knitr::include_graphics("figures/aois_tiles.png")
+```
+
+
+## Save files to disk
+```{r, eval = FALSE}
+# AOIs
+writeRaster(aois, filename = "spatial/data/processed/africa_aois.tif")
+# tiles
+writeRaster(tiles_stack$tile, 
+            filename = "spatial/data/processed/africa_tiles.tif")
+# geojson for Ghana
+st_write(ghana_tilesr, dsn = "spatial/data/processed/ghana_tiles.geojson")
+```

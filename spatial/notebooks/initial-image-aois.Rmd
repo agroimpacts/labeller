@@ -1,0 +1,221 @@
+---
+title: "Initial AOIs for Image Acquisition"
+author: "Lyndon Estes"
+date: "7/26/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Overview
+
+Several AOIs over Ghana will be collected as the primary locations for targetting image acquisitions (initially Planet).  These are provided as geojson AOIs.
+
+We also want to collect imagery for a set of grid cells that are not in Ghana. These are for our existing Q sites, which are places where we have already gathered reference maps that we would like to refine, as well as a number of N sites, which are randomly selected throughout the continent. Workers will get served with N sites during those times when they are waiting for new sites to come in from `cvml`. Q sites will always be in rotation. 
+
+Rather than polygon AOIs, we will provide these as a list of cell numbers that can be found in the master grid geotiff.  
+
+## Ghana AOIs
+
+```{r, message=FALSE, warning=FALSE}
+library(raster)
+library(sf)
+library(dplyr)
+library(leaflet)
+library(rmapaccuracy)
+
+meridia_sites <- read_sf("../data/processed/ghanasites.kml")
+africa <- read_sf("../data/external/africa_noisl_gcs.sqlite")
+africa_alb <- read_sf("../data/external/africa_countries_alb.sqlite")
+
+create_aoi <- function(x, increase) {
+  pol <- as(extend(extent(x), increase), "SpatialPolygons")
+  return(pol)
+}
+
+# 1 degree boxes
+towns <- unique(meridia_sites$town)
+expanders <- list(rep(0.12, 4),# Asamankese
+                  c(0.05, 0.2, 0.25, 0.05),  # Akwamu
+                  c(0.005, 0.12, 0.005, 0.12),  # Dadieso
+                  rep(0.22, 4),  # Ejura 
+                  c(0.2, 0.2, 0.1, 0.3))  # Kulpawn
+# aoi_akwamu <- create_aoi(meridia_sites %>% filter(town == "Akwamu"), 
+#                          increase = c(0, 0, 0.25, 0.25))
+
+
+aois <- do.call(rbind, lapply(1:length(towns), function(x) {
+  # print(x)
+  m <- meridia_sites %>% filter(town == towns[x])  
+  pbox <- create_aoi(m, increase = expanders[[x]])
+  st_as_sf(pbox)
+}))
+st_crs(aois) <- st_crs(meridia_sites)
+
+f <- "../data/processed/image_target_aois.geojson"
+if(!file.exists(f)) write_sf(aois, dsn = f)
+
+km2 <- sum(st_area(st_transform(aois, crs = st_crs(africa_alb))) / 10000) / 100
+paste("Area of AOIs =", round(unname(km2)), "km^2")
+```
+
+Map sites
+```{r, fig.align='center', out.width = '100%'}
+m <- leaflet() %>% #addTiles() %>% 
+  addProviderTiles("Esri.WorldImagery") %>%
+  addPolygons(data = africa %>% filter(country == "Ghana"), weight = 2, 
+              fillColor = "transparent", color = "white") %>% 
+  addPolygons(data = aois, weight = 2, fillColor = "transparent", 
+              color = "black") %>% 
+  addPolygons(data = meridia_sites, weight = 1, col = "red")  
+m
+```
+
+## Q and F sites
+
+We'll connect into the database to get a temporary table that is holding a list of sites that we will use to assess worker accuracy. 
+```{r}
+coninfo <- mapper_connect(user = pgupw$user, password = pgupw$password,
+                          db.tester.name = "lestes", 
+                          alt.root = "data/processed", 
+                          host = "crowdmapper.org")
+
+# consensus Q and F fields
+qf_names <- unique(DBI::dbGetQuery(coninfo$con, 
+                            "SELECT name from qaqcfields_fromoldmaps")$name)    
+
+# Select and prepare old Q sites
+q_names <- (tbl(coninfo$con, "kml_data") %>% filter(kml_type == "Q") %>% 
+  select("name") %>% collect())$name
+q_flds <- unique(DBI::dbGetQuery(coninfo$con, # old sites with fields
+                                  "SELECT name from qaqcfields")$name)
+q_noflds <- q_names[!q_names %in% q_flds]  # old sites without fields
+qf_all_flds <- unique(c(qf_names, q_flds))  # sites w/fields, old + consensus
+set.seed(1)  # select 10% of old sites without fields
+q_noflds_ss <- q_noflds[sample(1:length(q_noflds), 
+                               round(length(q_noflds) * .1))]
+qf_all_nms <- unique(c(qf_all_flds, q_noflds_ss))  # join them to sites w/fields
+
+# get the ids and coordinates of those names in master grid
+qf_ids <- coninfo$con %>% tbl("master_grid") %>% 
+  filter(name %in% qf_all_nms) %>% select(id, x, y, name) %>% collect()
+```
+
+## N sites
+
+Now get N sites, using new selection approach that will filter by fwt (>=5), to get sites more likely to have cropland. This will be coded in `select_n_sites`. "fwt" should be passed as an argument.
+```{r}
+# usual code for reading first available line
+# first_avail_line <- as.numeric(
+#   (tbl(coninfo$con, "system_data") %>% filter(key == 'firstAvailLine') %>%
+#      collect())$value)
+first_avail_line <- 1  # but replace with 1
+kml_batch_size <- 1500
+fwt <- 5
+
+# select 
+sql <- paste0("select gid, id, x, y, name, fwts from master_grid where ", 
+              "gid >= ", first_avail_line, " and gid <= ",  
+              (first_avail_line + kml_batch_size - 1), " and fwts >= ", 
+              fwt)
+              # fwt, " and name not like 'GH%'")
+n_ids <- data.table(DBI::dbGetQuery(coninfo$con, sql))
+# xy_tabs[, unique(substr(name, 1, 2))]
+
+# select 10 sites at random from the selected list
+set.seed(1)
+n_ids_ss <- n_ids[sample(1:.N, 10, replace = FALSE), ]
+gcstr <- proj4string(as_Spatial(meridia_sites))
+grid.poly <- point_to_gridpoly(xy = n_ids_ss, w = 0.005, NewCRSobj = gcstr, 
+                               OldCRSobj = gcstr)
+```
+
+Checking the 10 randomly selected sites from the sub-sample shows that most have some agriculture in them. 
+```{r, fig.align='center', out.width = '100%'}
+i <- 10
+m <- leaflet() %>% 
+  addProviderTiles("Esri.WorldImagery") %>%
+  addPolygons(data = grid.poly[i, ], weight = 3, fillColor = "transparent", 
+              col = "red")  
+m
+
+```
+
+## Combine N, F, Q sites
+```{r}
+# any(!qf_ids$name %in% n_ids$name))
+qfn_ids <- rbind(qf_ids, n_ids[, .(id, x, y, name)])
+qfn_ids <- qfn_ids[order(id)]
+
+f <- "../data/processed/individual_sites_needing_images.csv"
+if(!file.exists(f)) fwrite(qfn_ids, file = f, row.names = FALSE)
+```
+
+## Newer Ghana AOIs
+
+Add in one for ghana-nmee and rebuild ghana_aoi. Here we are reading it in from spatial/python/planet/cfg, which is where it lives for the downloader, and will replace it on S3, which is where it is called from by `create_f_pool.R`. 
+```{r, eval = FALSE}
+library(sf)
+library(aws.s3)
+library(rmapaccuracy)
+library(ggplot2)
+library(dplyr)
+
+aoi1 <- read_sf("spatial/python/planet/cfg/ghana_aoi.geojson")
+aoi2 <- read_sf("spatial/python/planet/cfg/ghana_nmee_aoif.geojson")
+
+aoi <- rbind(aoi1, st_geometry(aoi2))
+aoi %>% mutate(id = 1:6) %>% 
+  ggplot() + geom_sf(aes(fill = factor(id)))  
+
+st_write(aoi, dsn = "spatial/data/processed/ghana_aoi6.geojson")
+# plot(read_sf("spatial/data/processed/ghana_aoi6.geojson"))
+
+# aois_path <- "/vsis3/activemapper/grid/image_target_aois_test.geojson"
+put_object(file = "spatial/data/processed/ghana_aoi6.geojson", 
+           object = "image_target_aois.geojson", 
+           bucket = "activemapper/grid")
+aois_path <- "/vsis3/activemapper/grid/image_target_aois.geojson"
+st_read(aois_path)
+```
+
+## Larger area image downloads
+```{r, eval = FALSE}
+aois_path <- "/vsis3/activemapper/grid/image_target_aois.geojson"
+aois <- st_read(aois_path)
+africa <- read_sf("spatial/data/external/africa_noisl_gcs.sqlite")
+
+# plot(aois)
+# sum(st_area(aois)) / 10000 / 100
+left <- unname(st_bbox(aois[5, ])[3:4])
+new_aoi <- st_as_sfc(st_bbox(c(xmin = left[1], ymin = left[2] - 0.75, 
+                               xmax = left[1] + 1, ymax = left[2] + 0.25)))
+new_aoi <- st_sf(geometry = new_aoi)
+st_crs(new_aoi) <- st_crs(aois)
+new_aoi <- cbind(ID = as.integer(7), new_aoi)
+
+quartz()
+plot(africa %>% filter(country == "Ghana") %>% st_geometry())
+plot(st_geometry(aois), add = TRUE)
+plot(new_aoi, add = TRUE, col = "red")
+# (new_aoi %>% st_area()) / 10000 / 100
+# sum(st_area(rbind(aois, new_aoi))) / 10000
+
+st_write(new_aoi, dsn = "spatial/python/planet/cfg/ghana_aoi7.geojson")
+new_aoi <- st_read("spatial/python/planet/cfg/ghana_aoi7.geojson")
+aois7 <- rbind(cbind(ID = as.integer(1:6), aois), new_aoi)
+plot(aois7, add  = TRUE)
+st_write(aois7, dsn = "spatial/python/planet/cfg/ghana_aoi1-7.geojson")
+
+put_object(file = "spatial/python/planet/cfg/ghana_aoi1-7.geojson", 
+           object = "image_target_aois.geojson", 
+           bucket = "activemapper/grid")
+aois_path <- "/vsis3/activemapper/grid/image_target_aois.geojson"
+st_read(aois_path)
+plot(st_read(aois_path))
+
+```
+
+

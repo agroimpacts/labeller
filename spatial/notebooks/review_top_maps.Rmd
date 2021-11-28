@@ -1,0 +1,337 @@
+---
+title: "score_top_maps"
+author: "Boka Luo"
+date: "December 1, 2020"
+output: 
+  html_document:
+    margin: auto
+editor_options: 
+  chunk_output_type:view_in_new_windows
+---
+
+## Packages
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+library(rmapaccuracy)
+library(dplyr)
+library(sf)
+library(leaflet)
+library(DBI)
+source(here::here('spatial/R/tools/display_functions.R'))
+```
+
+## Arguments
+```{r}
+review.max <- 2 # maximum review time for each map
+read_dbase <- TRUE
+
+params <- yaml::yaml.load_file(here::here("common/config.yaml"))
+dinfo <- params$labeller
+
+reviewer.email <- dinfo$db_reviewer_email
+host <- dinfo$db_host
+con <- DBI::dbConnect(RPostgreSQL::PostgreSQL(), host = host, 
+                      dbname = "Africa", user = dinfo$db_username, 
+                      password = dinfo$db_password)
+
+reviewer.id <- dbGetQuery(
+  con,
+  paste0("SELECT id FROM users WHERE email='", reviewer.email, "'")
+) %>% pull(id)
+# reviewer_id <- tbl(con, "users") %>% filter(email == reviewer.email) %>% 
+#   pull(id)
+```
+
+
+## Finished grids and top assignments
+```{r, eval = read_dbase, echo = FALSE}
+# Grids mapped by all 4 mappers
+names.finish <- dbGetQuery(
+  con,
+  "SELECT name FROM kml_data WHERE mapped_count=4 AND kml_type='F'"
+)
+
+# Mapper scores from accuracy_data
+assess <- dbGetQuery(
+  con, 
+  paste0("SELECT worker_id, new_score, count_acc, fragmentation_acc,",
+         " edge_acc, ingrid_acc, outgrid_acc, field_skill, nofield_skill", 
+         " FROM accuracy_data INNER JOIN assignment_data USING", 
+         " (assignment_id)")
+) %>% group_by(worker_id) %>% 
+  summarise_all('mean') %>% 
+  mutate(edge_score = 0.5 * fragmentation_acc + 0.5 * edge_acc)
+
+#Associated approved assignments pending for review that is not reviewed by the reviewer
+assignments <- dbGetQuery(
+  con,
+  paste0("SELECT name, hit_id, assignment_id, worker_id, delete_time,", 
+         " reviewed_count FROM hit_data INNER JOIN assignment_data", 
+         " USING (hit_id) WHERE name IN ('",
+         paste(names.finish$name, collapse = "','"), "') ",
+         "AND status='Approved' ",
+         "AND reviewed_count <=", review.max, " ",
+         "AND assignment_id NOT IN (SELECT assignment_id FROM",
+         " assignment_review WHERE reviewer_id=", reviewer.id,")")
+) %>% 
+  left_join(
+    .,
+    assess %>% select(worker_id, new_score, edge_score), 
+    by=c("worker_id")
+  )
+
+# Top assignments
+assignments.top.score <- assignments %>% 
+  group_by(hit_id) %>% 
+  rename(score = new_score) %>% 
+  filter(score == max(score)) %>% 
+  select(-edge_score) %>% 
+  ungroup()
+  
+assignments.top.edge <- assignments %>% 
+  group_by(hit_id) %>% 
+  filter(edge_score==max(edge_score)) %>% 
+  select(-new_score) %>% 
+  ungroup()
+
+categories <- tbl(con, "categories") %>% collect()
+
+# names.grouped.edge <- assignments.top.edge %>% filter(edge_group != "") %>% pull(name)
+# names.grouped.binary <- assignments.top.score %>% filter(edge_group != "") %>% pull(name)
+
+names.reviewed <- c()
+
+```
+
+
+
+### Review starts here
+## get one uncommented map 
+
+```{r}
+name.select <- names.finish %>% 
+  filter(name %in% assignments$name & !name %in% names.reviewed) %>% 
+  sample_n(1) %>% 
+  pull(name)
+
+# name.select <- "TG0093561"
+# Grid
+grid_sel <- dbGetQuery(
+  con,
+  paste0("SELECT * FROM master_grid WHERE name='", name.select[1], "'")
+) %>% data.table::data.table(.)
+gcs <- "+proj=longlat +datum=WGS84 +no_defs"
+gpoly <- point_to_gridpoly(grid_sel, w = 0.005 / 2, gcs, gcs)
+
+# Scenes
+scene <- dbGetQuery(
+  con,
+  paste0("SELECT season, tms_url FROM scenes_data WHERE cell_id=", grid_sel$id)
+)
+os_url <- scene %>% filter(season=="OS") %>% pull(tms_url)
+gs_url <- scene %>% filter(season=="GS") %>% pull(tms_url)
+```
+
+## edge mode
+### Check the map that has highest edge_acc and fragmentation_acc
+```{r paged.print=TRUE}
+options(viewer = NULL)
+assignment.select.edge <- assignments.top.edge %>% filter(name==name.select)
+aid.edge <- assignment.select.edge %>% pull(assignment_id)
+
+# pick up fields for assignment
+sqls <- paste0("select name, category, geom_clean",
+               " FROM user_maps INNER JOIN categories ",
+               "USING (category) where assignment_id='",
+               aid.edge, "' ",
+               "AND categ_group ='field'")
+fields <- dbGetQuery(con, gsub(", geom_clean", "", sqls))
+if(nrow(fields) > 0) {
+  user_polys <- st_read(con, query = sqls)
+} else {
+  user_polys <- NULL
+}
+
+display_imagery(gpoly, user_polys, qaqc_maps=NULL, os_url, gs_url, categories)
+
+```
+
+
+## Feedback
+### Binary
+#### must be in range of [1,5], where correctly classified fields
+. 1 -- lower than 65%
+. 2 -- between 65% to 80%
+. 3 -- over 80%; or the grid has field but the missing is small enough to be ignored
+. 4 -- grid only has negative class and is 100% correct
+. 5 -- lower than 65% but contains land cover type lacking for modelling, including dense fields, bare land, fallows, or cities
+### Edge
+#### error count is limited to range [0,10], if the error counts over 10, then annotate it as NULL
+. 1 or more vertex missing of 1 field counts to 1 error
+. 1 field missing counts to 1 error
+. 1 edge missing between 2 fields counts to 1 error
+#### error ratio is limited to [0, 1,0]; if the error ratio exceed this range, annotate it as NULL
+. calculated by (edge error / total true fields), where
+. 2 fields dissolved into 1 only count 1 on numerator
+#### comment is required when both edge.errcount or edge.errratio are null, 
+#### or it is all correct negative class
+#### could be
+. "'suitable'" -- edge errors less than 3 & less than 20% of true edges or is only a very tiny part of target grid
+. "'suitable for fixing'" --edge erros less than 6, and is not hard to fix
+. "'suitable but all negative'" -- the grid has no error but 100% negative
+. "'not suitable'" -- edge errors over 6, and is hard to fix
+. "'not sure'" -- edges are "not suitable" but contains land cover types lacking for modeling, including dense fields, bare land, fallows, water, or cities
+```{r, echo=FALSE}
+feedback.binary <- 4
+feedback.edge.errcount <- 0 # numeric or "NULL"
+feedback.edge.errratio <- 0.0 # numeric or "NULL"
+feedback.comment <- "'suitable but all negative'"
+```
+
+
+### write the feedback to database
+```{r, echo=FALSE}
+
+dbExecute(
+  con,
+  sprintf(
+    paste0("insert into assignment_review",
+           "(reviewer_id, review_time, binary_group, edge_error_count,", 
+           "edge_error_ratio, edge_comment, assignment_id) values",
+           "(%d, '%s', %s, %s, %s, %s, %d);"),
+    reviewer.id,
+    as.character(Sys.time()),
+    feedback.binary,
+    feedback.edge.errcount,
+    feedback.edge.errratio,
+    feedback.comment,
+    aid.edge
+  )
+)
+
+# update reviewed_count in assignment_data
+dbExecute(con,
+          paste0("UPDATE assignment_data ",
+                 "SET reviewed_count=",
+          "(SELECT COUNT(1) FROM assignment_review ",
+          "WHERE assignment_id=", aid.edge,")",
+          "WHERE assignment_id=", aid.edge))
+
+names.reviewed <- append(names.reviewed, assignment.select.edge$name) %>% 
+  unique()
+```
+
+
+## binary mode
+### See if the map has the highest score is different from that one in edge mode
+### if yes, run following chunks for binary mode
+### else, skip the binary mode
+```{r}
+
+assignment.select.binary <- assignments.top.score %>% 
+  filter(name == name.select)
+aid.binary <- assignment.select.binary %>% pull(assignment_id)
+
+if (aid.binary == aid.edge) {
+  print(paste0("Binary mode and edge mode are pointing to the same assignment.", 
+               " Please skip following chunks"))
+  names.reviewed <- append(names.reviewed, 
+                           assignment.select.edge$name) %>% unique()
+  
+} else {
+  print(paste0("Binary mode and edge mode are pointing to different", 
+               " assignments. Please run following chunks"))
+  
+}
+```
+
+### Display imagery
+```{r}
+# pick up fields for assignment
+sqls <- paste0("select name, category, geom_clean",
+               " FROM user_maps INNER JOIN categories ",
+               "USING (category) where assignment_id='",
+               aid.binary, "' ",
+               "AND categ_group ='field'")
+fields <- dbGetQuery(con, gsub(", geom_clean", "", sqls))
+if(nrow(fields) > 0) {
+  user_polys <- st_read(con, query = sqls)
+} else {
+  user_polys <- NULL
+}
+
+display_imagery(gpoly, user_polys, qaqc_maps=NULL, os_url, gs_url, categories)
+
+```
+
+
+## Feedback
+### Binary
+#### must be in range of [1,5], where correctly classified fields
+. 1 -- lower than 65%
+. 2 -- between 65% to 80%
+. 3 -- over 80%; or the grid has field but the missing is small enough to be ignored
+. 4 -- grid only have negative class and is 100% correct
+. 5 -- lower than 65% but contains land cover type lacking for modelding, including dense fields, bare land, fallows, or cities
+### Edge
+#### error count is limited to range [0,10], if the error counts over 10, then annotate it as NULL
+. 1 or more vertex missing of 1 field counts to 1 error
+. 1 field missing counts to 1 error
+. 1 edge missing between 2 fields counts to 1 error
+#### error ratio is limited to [0, 1,0]; if the error ratio exceed this range, annotate it as NULL
+. calculated by (edge error / total true fields), where
+. 2 fields dissolved into 1 only count 1 on numerator
+#### comment is required when both edge.errcount or edge.errratio are null, 
+#### or it is all correct negative class
+#### could be
+. "'suitable'" -- edge errors less than 3 & less than 20% of true edges or is only a very tiny part of target grid
+. "'suitable for fixing'" --edge erros less than 6, and is not hard to fix
+. "'suitable but all negative'" -- the grid has no error but 100% negative
+. "'not suitable'" -- edge errors over 6, and is hard to fix
+. "'not sure'" -- edges are "not suitable" but contains land cover types lacking for modeling, including dense fields, bare land, fallows, water, or cities
+```{r, echo=FALSE}
+feedback.binary <- 4
+feedback.edge.errcount <- 0
+feedback.edge.errratio <- 0.0 # numeric or "NULL"
+feedback.comment <- "'suitable but all negative'"
+```
+
+
+### write feedback to database
+```{r, echo=FALSE}
+
+dbExecute(
+  con,
+  sprintf(
+    paste0("insert into assignment_review",
+           "(reviewer_id, review_time, binary_group,", 
+           " edge_error_count, edge_error_ratio, edge_comment,", 
+           " assignment_id) values",
+           " (%d, '%s', %s, %s, %s, %s, %d);"),
+    reviewer.id,
+    as.character(Sys.time()),
+    feedback.binary,
+    feedback.edge.errcount,
+    feedback.edge.errratio,
+    feedback.comment,
+    aid.binary
+  )
+)
+
+# update reviewed_count in assignment_data
+dbExecute(
+  con,
+  paste0("UPDATE assignment_data",
+         " SET reviewed_count=",
+         "(SELECT COUNT(1) FROM assignment_review",
+         " WHERE assignment_id=", aid.binary, ")",
+         "WHERE assignment_id=", aid.binary)
+)
+
+names.reviewed <- append(names.reviewed, assignment.select.binary$name) %>% unique()
+```
+
+## close connection
+### Run this chunk when stop assessment
+```{r, echo=FALSE}
+dbDisconnect(con)
+```

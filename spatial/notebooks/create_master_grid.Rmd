@@ -1,0 +1,461 @@
+---
+title: "Make New Master Grid"
+author: "Su Ye & Lei Song"
+date: "2/16/2018"
+output: 
+  html_document:
+    theme: united
+    number_sections: true 
+    highlight: tango
+---
+
+```{r setup, include=FALSE, echo = TRUE, cache=TRUE}
+knitr::opts_chunk$set(echo = TRUE, cache=TRUE)
+```
+
+## Pre-work
+
+### Install the essential packages and load them into environment
+
+1. `raster`, `rgdal`, `rgeos`, and `gdalUtils` are used for geographical data.
+
+2. `lmisc` is a package to manage the working folder and the path more easily.
+
+3. `dtraster` is a package for 'as.data.table' function.
+
+4. Package `rmapaccuracy` is a package built in the project, need to be tailored accordingly. A good way to install it is to download the github repo, change the code and install locally.
+
+4. Package `lmisc`, `dtraster` are Github packages. Need to be installed by `install_github()` in package `devtools`.
+
+```{r packages, message=FALSE, warning=FALSE, eval = TRUE}
+library(raster) # packages for geographical data
+library(rgdal)
+library(rgeos)
+library(gdalUtils)
+library(lmisc) # package for handling the working directory and path
+require(dtraster)
+library(dplyr) # package for big database
+library(dbplyr)
+library(RPostgreSQL)
+library(rmapaccuracy) # package for KML generation
+library(yaml)
+
+params  <-yaml.load_file(file.path(Sys.getenv('PYTHONPATH'),'config.yaml'))
+```
+
+### Check the version of packages and R
+
+It is necessary to update the GDAL to the recent version. Different versions of GDAL might use different methods to process the data. Slightly difference could be a disaster for geographical data. 
+
+For example, an earlier version of gdal caused a raster reprojection to have slightly different results compared to the later version.
+
+```{r checkVersion, message=FALSE, warning=FALSE, eval = TRUE}
+sessionInfo() # Check the system information
+gdal_setInstallation(rescan = FALSE) # Check the GDAL
+## check GDAL version
+message("GDAL version is: ")
+getOption("gdalUtils_gdalPath")[[1]]$version
+```
+**NOTE:** GDAL version should be 2.2.2 or higher.
+
+### Set the working directory
+
+All the functions here come from package `lmisc`. This package helps us to manage the working folder and the path easily.
+
+```{r wd, message=FALSE, warning=FALSE, eval = TRUE}
+## Set the working directory
+p_extdat <- "spatial/data/external/"
+p_intdat <- "spatial/data/interim/"
+p_procdat <- "spatial/data/processed/"
+```
+
+## Load Africa boundary line and buffer by 500 m (1 pixel)
+
+### Fetch Africa with GCS projection
+
+```{r load, message=FALSE, warning=FALSE, eval = FALSE}
+af <- readOGR(dsn = paste0(p_extdat, "africa_countries_alb.sqlite"), 
+              layer = "africa_countries_alb", verbose = FALSE)
+
+af_cnt <- readOGR(dsn = paste0(p_extdat, "africa_noisl_gcs.sqlite"), 
+                  layer = "africa_noisl_gcs", verbose = FALSE)
+wgs <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0"
+af_cnt@proj4string <- CRS(wgs)
+```
+
+### Buffer 1 km for the boundary
+
+Before we do buffer, all layers' projection should be Albers, since the function `gBuffer` only works for projected coordination. After we finish the buffer, change the projection back to GCS.
+
+```{r buffer, message=FALSE, warning=FALSE, eval = FALSE}
+af_cnt_alb <- spTransform(af_cnt, af@proj4string)  # transform to Albers
+af_alb <- gUnaryUnion(af_cnt_alb)  # dissolve countries
+af_alb <- SpatialPolygonsDataFrame(af_alb, data = data.frame("ID" = 1), 
+                                   match.ID = FALSE)
+afbuf <- gBuffer(af_alb, width = 500)  # buffer by 500 m
+afbuf <- SpatialPolygonsDataFrame(afbuf, 
+                                  data = data.frame("ID" = 1), 
+                                  match.ID = FALSE)
+
+## Transform back to GCS projection
+af <- spTransform(af_alb, CRS(wgs))
+afbuf <- spTransform(afbuf, CRS(wgs))
+rm(af_cnt_alb, af_alb)
+```
+
+### Save out the files
+
+```{r saveORG, message=FALSE, warning=FALSE, eval = FALSE}
+writeOGR(af_cnt, 
+         dsn = fp(p_intdat, "africa_countries_gcs.sqlite"), 
+         layer = "africa_countries_gcs", 
+         driver = "SQLite", dataset_options = c("SPATIALITE = yes"),
+         overwrite_layer=TRUE)
+writeOGR(afbuf, 
+         dsn = fp(p_intdat, "africa_gcs_500m_buff.sqlite"), layer = "afbuf",
+         driver = "SQLite", dataset_options = c("SPATIALITE = yes"),
+         overwrite_layer=TRUE)
+```
+
+## Grid the buffered shape
+
+Get the master grid with 0.005 degree * 0.005 degree. 'buffrast.tif' is a binary image for Africa area, while "africa_master_grid.tif" is a image for Africa area. Value of each pixel is the pixel's unique ID.
+
+**NOTE:** When we use `writeRaster`, be careful of datatype. Define the datatype to a proper one. Because `R` won't give you an error for these, instead it will mess your stuff up.
+
+```{r grid, message=FALSE, warning=FALSE, eval = FALSE}
+gdal_rasterize(src_datasource = paste0(p_intdat, "africa_gcs_500m_buff.sqlite"),
+               ot = "Int16", tr = c(0.005, 0.005), at = TRUE, a_nodata = 0,
+               dst_filename = paste0(p_intdat, "buffrast.tif"),
+               te = c(-17.541, -34.846, 51.420, 37.540),
+               burn = 1, l = "afbuf", of = "GTiff") 
+afgrid <- raster(paste0(p_intdat, "buffrast.tif"))
+
+cells <- Which(!is.na(afgrid), cells = TRUE)
+ids <- 1:length(cells)
+afgrid[cells] <- ids # make the values of each grid is its index
+afgrid <- writeRaster(afgrid, datatype = "INT4U", # datatype should be INT4U
+                      filename = fp(p_intdat, "africa_master_grid.tif"), 
+                      overwrite = TRUE)
+```
+
+## Process cropland data for sample weights
+
+First read the cropland percentage image got from Geowiki. Then do classification to the raw image. Of course, we use the country boundary to tailor the final image.
+
+```{r fwts, message=FALSE, warning=FALSE, eval = FALSE}
+f <- paste0(p_extdat, "cropland/Hybrid_10042015v9.img")
+fo <- paste0(p_intdat, "af_cropland.tif")
+afgridbuf <- raster(paste0(p_intdat, "buffrast.tif"))
+
+gdalwarp(srcfile =  f, t_srs = projection(afgrid), dstfile = fo,
+         r = "bilinear", ot = "Float32", te = bbox(afgrid)[1:4],
+         dstnodata = -32768, tr = res(afgrid), of = "GTiff",
+         verbose = TRUE, overwrite = TRUE) # get subset of cropland for africa
+
+cropland <- raster(fo)
+cropland_p <- cropland / 100 * afgridbuf # calculate the percentage
+
+recl <- cbind(seq(0, 1, 0.1)[-11], seq(0, 1, 0.1)[-1], 1:10)
+f <- paste0(p_intdat, "af_cropland_prob_cl.tif")
+cropland_pcl <- reclassify(cropland_p, rcl = recl, include.lowest = TRUE,
+                           filename = f, overwrite=TRUE) # do relcassification to cropland percentage data
+
+```
+
+## Create the raster brick
+
+Before we save out the raster brick, need to make sure the structure of image `afgrid` and `cntr` are identical so that they can match each other. In this case, the buffer is an issue. So some preprocess is essential.
+
+1. Rasterize the country boundaries.
+
+2. Merge the result and the binary image for Africa area 'buffrast.tif' to make a image of country index with buffer. The value of each pixel is the ID of the country this pixel belonging to.
+
+3. Save the master grid raster and the image of country index with buffer as a brick.
+
+**NOTE:** When we use `brick`, be careful of datatype. Define the datatype to a proper one.
+
+```{r brick, message=FALSE, warning=FALSE, eval = FALSE}
+## rasterize the countries
+af_f <- paste0(p_intdat, "africa_countries_gcs.sqlite")
+af_of <- paste0(p_intdat, "africa_countries_gcs.tif")
+afgridbuf <- raster(paste0(p_intdat, "buffrast.tif"))
+gdal_rasterize(src_datasource = af_f, dst_filename = af_of, at = TRUE,
+               ot = "Int16", a = "objectid", l = "africa_countries_gcs",
+               tr = res(afgrid), verbose = FALSE, te = bbox(afgrid)[1:4],
+               a_nodata = -32768, of = "GTiff")
+
+## merge the buffer back to the afgrid
+cntr <- raster(af_of)
+cntr <- merge(cntr, afgridbuf, incomparables = 1)
+
+cntrm  <- cntr >= 1
+afgridr <- afgrid * cntrm
+cropland_pcl <- cropland_pcl * cntrm
+
+## create complete master
+st <- stack(list(afgridr, cropland_pcl, cntr))
+br <- brick(st, filename = paste0(p_intdat, "africa_master_brick.tif"), 
+            overwrite = TRUE, datatype = "INT4U") # change datatype
+```
+
+## Create complete master grid textfile
+
+```{r mgrid, message=FALSE, warning=FALSE, eval = FALSE}
+## give buffer surrounding the boundary a 'iso2' - BR
+attr <- af_cnt@data[, c("objectid", "iso2")]
+attr$iso2 <- as.character(attr$iso2)
+attr <- rbind(attr, c(1, "BR"))
+attr$iso2 <- as.factor(attr$iso2)
+attr$objectid <- as.numeric(attr$objectid)
+af_cnt_dt <- data.table(attr, key = "objectid")
+setnames(af_cnt_dt, "objectid", "cnt_code")
+
+## read brick into a table and clean it
+br_dt <- as.data.table(br, xy = TRUE, progress = "text")
+setnames(br_dt, old = colnames(br_dt)[3:5], 
+         new = c("ID", "fwts", "cnt_code"))
+br_dt <- br_dt[!is.na(ID)]
+
+## create unique ID number for each cell in each country
+for(i in unique(br_dt$cnt_code)) {
+        ind <- which(br_dt$cnt_code == i)
+        br_dt[ind, ind := order(ind)]
+}
+
+setkey(br_dt, cnt_code)
+mgrid <- merge(br_dt, af_cnt_dt, by = "cnt_code")
+ndig <- nchar(max(mgrid$ind))
+mgrid[, name := sprintf(paste0("%s%0", ndig, "i"), iso2, ind)]
+setcolorder(mgrid, c("ID", "x", "y", "name", "fwts", "cnt_code", "iso2",
+                     "ind"))
+mgrid[, (c("cnt_code", "iso2", "ind")) := NULL]
+
+## change data types
+names_int <- c("ID", "fwts")
+for(col in names_int) set(mgrid, j = col, value = as.integer(mgrid[[col]]))
+mgrid[, avail := rep("T", nrow(mgrid))]
+
+## change decimal
+mgrid[, x := round(x, 4)]
+mgrid[, y := round(y, 4)]
+
+## write out the table into a csv file
+fnm <- paste0(p_procdat, "africa_master_grid_new.csv")
+fwrite(mgrid, file = fnm, col.names = TRUE, row.names = FALSE, verbose = FALSE)
+```
+
+### Clean-up interim files
+
+Leave behind `africa_master_brick.tif` in interim folder. 
+```{r, eval = FALSE}
+frm <- paste0(p_intdat, c("af_cropland.tif", "af_cropland_prob_cl.tif", 
+                          "africa_countries_gcs.sqlite", 
+                          "africa_countries_gcs.tif", 
+                          "africa_master_grid.tif", 
+                          "africa_gcs_500m_buff.sqlite", 
+                          "buffrast.tif"))
+file.remove(frm)
+```
+
+
+## Write DT into postgis
+
+The database is already built in our server. The name is 'AfricaSandbox'. Use `dbplyr` package to connect to the database by defining the correct `host`, `port`, `user`, and `password`. 
+
+```{r postgis, message=FALSE, warning=FALSE, eval = FALSE}
+## create the database
+# system("createdb AfricaSandbox")
+
+## create user
+# system(paste("createuser -s -l -d -r ", params$labeller$db_username))
+
+## connect to the database
+con <- DBI::dbConnect(RPostgreSQL::PostgreSQL(),
+                      dbname = "AfricaSandbox",   
+                      user = params$labeller$db_username,
+                      password = params$labeller$db_password)
+
+## create a table in database
+sql <- paste("CREATE TABLE master_grid_new",
+             "(gid serial PRIMARY KEY,",
+             "ID integer, x double precision, y double precision,",
+             "name char(9), fwts integer, avail char(1));")
+dbSendQuery(con, sql)
+
+## copy csv file into the table
+sql <- paste0("\\COPY master_grid_new(ID, x, y, name, fwts, avail) ",
+             "FROM '", fnm, "' WITH DELIMITER ',' CSV HEADER;")
+dbSendQuery(con, sql)
+
+# improve the efficiency of querying
+dbSendQuery(con, "CREATE INDEX name_gix_new ON master_grid_new (name);")
+dbSendQuery(con, "VACUUM ANALYZE master_grid_new;")
+dbSendQuery(con, "CLUSTER master_grid_new USING name_gix_new;")
+
+## close the database
+DBI::dbDisconnect(con)
+```
+
+## Check the final master grid
+
+### Querying efficiency
+
+```{r efficiency, message=FALSE, warning=FALSE, eval = TRUE}
+con <- DBI::dbConnect(RPostgreSQL::PostgreSQL(),
+                      dbname = "AfricaSandbox",   
+                      user = params$labeller$db_username,
+                      password = params$labeller$db_password)
+
+# ids <- sample(mgrid$ID, 20 ,replace=FALSE) # get random ID from mgrid to test
+
+ids <- 94649043
+
+ptm <- proc.time()
+pixels <- tbl(con, "master_grid_new") %>%
+        filter(id == ids) %>%
+        collect()
+proc.time() - ptm
+
+DBI::dbDisconnect(con)
+```
+
+### Select different clusters across the whole Africa
+
+```{r clusters, message=FALSE, warning=FALSE, eval = TRUE, fig.width=9.5, fig.height=9.5}
+library(leaflet)
+africa <- readOGR(fp(p_odat, "africa_countries_gcs.sqlite"), verbose = FALSE)
+con <- DBI::dbConnect(RPostgreSQL::PostgreSQL(),
+                      dbname = "AfricaSandbox",   
+                      user = params$labeller$db_username,
+                      password = params$labeller$db_password)
+
+## set parameters
+wgs <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0"
+diam <- 0.005/2
+
+## Put all functions together
+kml_generate <- function(pixels){
+        xy_tabs <- data.table(pixels)
+        
+        ## Step 1. Convert point data to proper projections
+        gpnts <- sapply(1:nrow(xy_tabs), function(i) {  # i <- 1 
+                xy <- data.frame(xy_tabs[i, ])
+                coordinates(xy) <- ~x + y # xy[1:2]
+                # xy <- xy[, 3:5]
+                crs(xy) <- CRS(wgs)
+                xy
+        })
+        
+        ## Step 2. Convert points to polygons
+        gpols <- sapply(1:nrow(xy_tabs), function(i) { 
+                xy_trans <- gpnts[[i]] 
+                proj4 <- proj4string(xy_trans)
+                ptdata <- data.frame(xy_trans)
+                gpol <- point_to_gridpoly(xy = ptdata, w = diam, 
+                                          CRSobj = CRS(proj4))
+                gpol@data$id <- i
+                gpol <- spChFIDs(gpol, as.character(gpol@data$id))
+        })
+        
+        ## Step 3. Transform to geographic coordinates and write out to kmls
+        gpols_gcs <- sapply(1:length(gpols), function(i) {
+                gpol_gcs <- gpols[[i]]
+                kml_name <- paste0("/home/lsong/mappingafrica/data/kmls/",
+                                   gpol_gcs$name, ".kml")
+                rgdal::writeOGR(gpol_gcs, dsn = kml_name, layer = gpol_gcs$name,                                 driver = "KML", overwrite = TRUE)
+                gpol_gcs
+        })
+        gpols_gcs <- do.call(rbind, gpols_gcs)
+}
+
+## north-west
+pixels <- tbl(con, "master_grid_new") %>%
+        filter((id == 26006600) | (id == 26006601) | (id == 26017292) | 
+                 (id == 26017293)) %>% collect()
+
+pixels$name
+nw <- kml_generate(pixels)
+
+## north-center
+pixels <- tbl(con, "master_grid_new") %>%
+        filter((id == 11961260) | (id == 11961261) | (id == 11970741) | 
+                 (id == 11970742)) %>% collect()
+
+pixels$name
+nc <- kml_generate(pixels)
+
+## north-east
+pixels <- tbl(con, "master_grid_new") %>%
+        filter((id == 7688127) | (id == 7688128) | (id == 7697081) | 
+                 (id == 7697082)) %>% collect()
+
+pixels$name
+ne <- kml_generate(pixels)
+
+## center-west
+pixels <- tbl(con, "master_grid_new") %>%
+        filter((id == 69102813) | (id == 69102814) | (id == 69109497) | 
+                 (id == 69109498)) %>% collect()
+
+pixels$name
+cw <- kml_generate(pixels)
+
+## center-center
+pixels <- tbl(con, "master_grid_new") %>%
+        filter((id == 62394861) | (id == 62394862) | (id == 62403237) | 
+                 (id == 62403238)) %>% collect()
+
+pixels$name
+cc <- kml_generate(pixels)
+
+## center-east
+pixels <- tbl(con, "master_grid_new") %>%
+        filter((id == 60618428) | (id == 60618429) | (id == 60628923) | 
+                 (id == 60628924)) %>% collect()
+
+pixels$name
+ce <- kml_generate(pixels)
+
+## south-west
+pixels <- tbl(con, "master_grid_new") %>%
+        filter((id == 100287476) | (id == 100287477) | (id == 100290355) | 
+                 (id == 100290356)) %>% collect()
+
+pixels$name
+sw <- kml_generate(pixels)
+
+## south-center
+pixels <- tbl(con, "master_grid_new") %>%
+        filter((id == 99875112) | (id == 99875113) | (id == 99878249) | 
+                 (id == 99878250)) %>% collect()
+
+pixels$name
+sc <- kml_generate(pixels)
+
+## south-east
+pixels <- tbl(con, "master_grid_new") %>%
+        filter((id == 98236189) | (id == 98236190) | (id == 98239788) | 
+                 (id == 98239789)) %>% collect()
+
+pixels$name
+se <- kml_generate(pixels)
+
+fc <- c("transparent", "red", "blue")
+m <- leaflet() %>% 
+        addTiles() %>% 
+        addPolygons(data = africa, weight = 2, fillColor = fc[1], 
+                    color = fc[2]) %>%
+        addPolygons(data = nw, weight = 1, fillColor = fc[1], color = fc[3]) %>%
+        addPolygons(data = nc, weight = 1, fillColor = fc[1], color = fc[3]) %>%
+        addPolygons(data = ne, weight = 1, fillColor = fc[1], color = fc[3]) %>%
+        addPolygons(data = cw, weight = 1, fillColor = fc[1], color = fc[3]) %>%
+        addPolygons(data = cc, weight = 1, fillColor = fc[1], color = fc[3]) %>%
+        addPolygons(data = ce, weight = 1, fillColor = fc[1], color = fc[3]) %>%
+        addPolygons(data = sw, weight = 1, fillColor = fc[1], color = fc[3]) %>%
+        addPolygons(data = sc, weight = 1, fillColor = fc[1], color = fc[3]) %>%
+        addPolygons(data = se, weight = 1, fillColor = fc[1], color = fc[3])
+m
+
+DBI::dbDisconnect(con)
+```

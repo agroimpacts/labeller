@@ -1,0 +1,167 @@
+---
+title: "Find Centroids of KML Static Files"
+author: "Lyndon Estes"
+date: "2/22/2018"
+output: 
+  html_document:
+    theme: united
+    number_sections: true 
+    highlight: tango
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Get Centroids
+
+Read in KMLs of static file system and get the centroids for them. 
+
+```{r}
+library(rgdal)
+library(sf)
+library(dplyr)
+library(data.table)
+library(raster)
+library(rgeos)
+library(yaml)
+params <- yaml.load.file(paste(Sys.getenv(PYTHONPATH),'/config.yaml'))
+
+p_kmls <- "kmls_static"
+p_grid <- "spatial/data/interim/"
+p_dat <- "spatial/data/external/"
+p_old <- "../mappingafrica/external/production_062016/data/07112017/"
+p_oldg <- "../mappingafrica/external/ext_data/"
+alb <- paste("+proj=aea +lat_1=20 +lat_2=-23 +lat_0=0 +lon_0=25 +x_0=0 +y_0=0",
+             "+ellps=WGS84 +datum=WGS84 +units=m +no_defs") 
+epsg <- "+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs"
+
+# custom Albers read-in from labeller database, for Zambia kmls from old grid
+load(file.path(p_dat, "prjstr.rda"))
+
+# read-in centroids
+kmlcentroids <- lapply(dir(p_kmls, full.names = TRUE), function(x) {
+  kml <- read_sf(x)
+  pt <- st_transform(st_centroid(st_transform(kml, epsg)), st_crs(kml))
+  pt <- st_bbox(pt[c(1, 10)])[1:2]
+  data.frame("name" = kml$Name, "x" = unname(pt[1]), "y" = unname(pt[2]), 
+             stringsAsFactors = FALSE)
+})
+ptmat <- do.call(rbind, kmlcentroids)
+
+# kml <- read_sf(dir(p_kmls, full.names = TRUE)[1])
+# plot(st_geometry(kml))
+# plot(st_geometry(kmlcentroids[[1]]), add = TRUE)
+# pt <- st_bbox(kmlcentroids[[1]][c(1, 10)])[1:2]
+# points(pt[1], pt[2], pch = 20)
+
+
+# library(RPostgreSQL)
+# "sandbox.crowdmapper.org"
+# drv <- dbDriver("PostgreSQL")  
+# con <- dbConnect(drv, host = params$labeller$db_host,
+#                  dbname = params$labeller$db_sandbox_name,
+#                  user = params$labeller$db_username, 
+#                  password = params$labeller$db_password)
+
+# grab the old kml sites
+oldkmls <- fread(file.path(p_old, "kmls.csv"))
+zmsites <- oldkmls[kml_type == "Q" & like(name, "ZM"), ]
+
+```
+
+## Align Centroids to New Grid
+
+Extract cell IDs from new master grid brick, as well as the left behind Zambia ones from the old master brick
+```{r, eval = FALSE}
+mgrid <- raster(file.path(p_grid, "africa_master_brick.tif"))  # new grid
+mgrido <- fread(file.path(p_oldg, "africa_master_grid.csv"))  # old grid
+
+# first intersect points with the old master brick to get handful of Zambia 
+# Q sites
+zmq <- mgrido[name %in% zmsites$name]
+zmq <- zmq[, list(x, y, name, ID, zone)]
+setnames(zmq, "ID", "id")
+coordinates(zmq) <- ~x + y
+proj4string(zmq) <- alb
+# proj4string(zmq) <- prjstr[unique(zmq$zone)]
+# zmq@data <- zmq@data[, c("name", "id"), drop = FALSE]
+zmq <- spTransform(zmq, prjstr[unique(zmq$zone)])
+zmq <- spTransform(zmq, crs(mgrid))
+zmq@data <- zmq@data[, c("name"), drop = FALSE]
+
+coordinates(ptmat) <- ~x + y
+proj4string(ptmat) <- crs(mgrid)
+ptmat <- rbind(ptmat, zmq)
+# plot(ptbufs)
+
+# ptbufs <- gBuffer(ptmat, width = 0.011, byid = TRUE)
+# qids <- extract(mgrid, ptmat, cellnumbers = TRUE)
+ptbufs <- st_buffer(st_as_sf(ptmat[1, ]), dist = 0.011)
+# ptbufs <- Buffer(spTransform(ptmat[625:627, ], alb), width = 5000, 
+#                   byid = TRUE)
+qids <- extract(mgrid, ptmat[1, ], cellnumbers = TRUE)
+ptmat$id <- qids[, 2]
+idcoords <- xyFromCell(mgrid, cell = qids[, 1], spatial = TRUE)
+# plot(idcoords)
+
+# then from the original one
+vals <- extract(mgrid, as_Spatial(st_geometry(ptbufs)), cellnumbers = TRUE)
+valsdf <- do.call(rbind, vals)
+# valsdf[valsdf[, 1] %in% valsdf[which(duplicated(valsdf[, 1])), 1], ]
+# length(unique(valsdf[, 1]))
+
+tst <- xyFromCell(mgrid, cell = vals[[1]][, 1], spatial = TRUE)
+plot(ptbufs)
+points(tst)
+points(ptmat[1, ])
+
+```
+
+```{r, eval = FALSE}
+point_to_sfgridpoly <- function(xy, w, CRSobj) {
+  dw <- list("x" = c(-w, w, w, -w, -w), "y" = c(w, w, -w, -w, w))
+  pols <- do.call(rbind, lapply(1:nrow(xy), function(i) {  # i <- 1
+    xs <- unlist(sapply(dw$x, function(x) unname(xy[i, "x"] + x)))
+    ys <- unlist(sapply(dw$y, function(x) unname(xy[i, "y"] + x)))
+    p1 <- list(t(sapply(1:length(xs), function(i) c(xs[i], ys[i]))))
+    pol <- st_polygon(p1)
+    poldf <- st_sfc(pol)
+    polsf <- st_sf(xy[i, .(ID, name, fwts)], geom = poldf)
+    st_crs(polsf) <- CRSobj
+    polsf
+  }))
+}
+
+ptbufs <- st_buffer(st_as_sf(ptmat[1, ]), dist = 0.02)
+# ptbufs <- Buffer(spTransform(ptmat[625:627, ], alb), width = 5000, 
+#                   byid = TRUE)
+qids <- extract(mgrid, ptmat[1, ], cellnumbers = TRUE)
+ptmat$id <- qids[, 2]
+idcoords <- xyFromCell(mgrid, cell = qids[, 1], spatial = TRUE)
+# plot(idcoords)
+
+# then from the original one
+vals <- extract(mgrid, as_Spatial(st_geometry(ptbufs)), cellnumbers = TRUE)
+valsdf <- do.call(rbind, vals)
+# valsdf[valsdf[, 1] %in% valsdf[which(duplicated(valsdf[, 1])), 1], ]
+# length(unique(valsdf[, 1]))
+
+tst <- data.table(data.frame(xyFromCell(mgrid, cell = vals[[1]][, 1])))
+tst$ID <- 1:nrow(tst)
+tst$fwts <- 1
+tst$name <- paste0("SA", 1:nrow(tst))
+# tst <- st_as_sf(tst)
+diam <- res(mgrid)[1] / 2
+gpolssf <- point_to_sfgridpoly(tst, diam, proj4string(mgrid))
+
+# plot(st_geometry(ptbufs))
+plot(st_geometry(gpolssf), col = "grey")
+plot(st_geometry(read_sf(dir(p_kmls, full.names = TRUE)[1])), add = TRUE, 
+     border = "red", lwd = 2)
+
+
+```
+
+
+

@@ -1,0 +1,89 @@
+---
+title: "Update_f_pool for loop testing"
+author: "Lei Song"
+date: "10/25/2018"
+output: 
+  html_document:
+    theme: united
+    number_sections: true 
+    highlight: tango
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(dplyr)
+library(data.table)
+
+## Read the cells that have both growing-season and off-season images
+load("/home/lsong/mappingafrica/data/postgis.rda")
+con <- DBI::dbConnect(RPostgreSQL::PostgreSQL(),
+                      dbname = "AfricaSandbox",   
+                      user = user,
+                      password = password)
+
+scenes_gs <- data.table(tbl(con, "scenes_data") %>%
+                                  select(cell_id, season, global_col, global_row) %>% 
+                                  filter(season == "GS") %>% collect())
+scenes_os <- data.table(tbl(con, "scenes_data") %>%
+                                  select(cell_id, season, global_col, global_row) %>% 
+                                  filter(season == "OS") %>% collect())
+scenes_data <- merge(scenes_gs, scenes_os, by = "cell_id")
+scenes_col_row <- scenes_data[, 3:4]
+names(scenes_col_row) <- c("col", "row")
+
+## Update the f_pool.csv file
+f_pool <- read.csv("spatial/data/processed/f_pool.csv")
+f_pool_new <- merge(f_pool, scenes_col_row, by = c("col", "row"))
+
+## Delte the names already in incoming_names
+names_exist <- data.table(tbl(con, "incoming_names") %>%
+                                  select(name) %>% collect())
+f_pool_new <- data.table(f_pool_new) %>% filter(!name %in% names_exist$name)
+
+f_pool_new <- f_pool_new[, c("name", "col", "row", "name_col_row")]
+write.csv(f_pool_new, file = "spatial/data/processed/f_pool_ghana_aoi4_rippedRF.csv", row.names = F)
+put_object(file = "spatial/data/processed/f_pool_ghana_aoi4_rippedRF.csv", 
+           object = "s3://activemapper/planet/f_pool_ghana_aoi4_rippedRF.csv")
+
+## Another methods for double-check
+load("/home/lsong/mappingafrica/data/postgis.rda")
+con <- DBI::dbConnect(RPostgreSQL::PostgreSQL(),
+                      dbname = "AfricaSandbox",   
+                      user = user,
+                      password = password)
+
+scenes_gs <- data.table(tbl(con, "scenes_data") %>%
+                                  select(cell_id, scene_id, global_col, global_row, season, url) %>% 
+                                  filter(season == "GS") %>% collect())
+scenes_os <- data.table(tbl(con, "scenes_data") %>%
+                                  select(cell_id, scene_id, global_col, global_row, season, url) %>% 
+                                  filter(season == "OS") %>% collect())
+scenes_data <- merge(scenes_gs, scenes_os, by = "cell_id")
+
+ids <- scenes_data$cell_id
+
+f_names <- dbGetQuery(con, paste0('SELECT name FROM master_grid WHERE id in (',paste(ids,collapse=','),')'))
+f_pool_test2 <- merge(f_pool, f_names, by = "name")
+
+## Make a corresponding planet_catalog.csv file
+## Make a subset of scenes data based on new f_pool
+names(scenes_data)[3:4] <- c("col", "row")
+scenes_data_sub <- merge(f_pool, scenes_data, by = c("col", "row"))
+ids <- scenes_data_sub$cell_id
+
+planet_catalog <- data.table(tbl(con, "scenes_data") %>%
+                                  select(cell_id, scene_id, global_col, global_row, season, url) %>% 
+                                  collect())
+cell_ids <- data.frame(cell_id = ids)
+planet_catalog <- merge(planet_catalog, cell_ids)
+names(planet_catalog) <- c("cell_id", "scene_id", "col", "row", "season", "uri")
+write.csv(planet_catalog, file = "spatial/data/processed/planet_catalog_ghana_aoi4_rippedRF.csv", row.names = F)
+
+## See create_f_pool to see how to set up the AWS environment.
+put_object(file = "spatial/data/processed/planet_catalog_ghana_aoi4_rippedRF.csv", 
+           object = "s3://activemapper/planet/planet_catalog_ghana_aoi4_rippedRF.csv")
+```
+

@@ -1,0 +1,100 @@
+---
+title: "I and Q site polygons"
+author: "Lyndon Estes"
+date: "`r Sys.Date()`"
+output:
+  prettydoc::html_pretty:
+  theme: architect
+highlight: github
+---
+
+## Purpose
+
+Read in centroid points from I/Q sites corresponding to new master_grid, convert to polygons for viewing in QGIS.
+
+## Paths, connections, and kml_data
+```{r}
+library(rmapaccuracy)
+library(sf)
+
+data("pgupw")
+con <- DBI::dbConnect(RPostgreSQL::PostgreSQL(), 
+                      host = "crowdmapper.org",
+                      dbname = "AfricaSandbox", user = pgupw$user, 
+                      password = pgupw$password)
+
+# kml data
+kml_data <- tbl(con, "kml_data") %>% filter(kml_type %in% c("Q", "I")) %>%
+  select(kml_type, name) %>% collect()
+
+# master grid values
+xy_tabs <- tbl(con, "master_grid") %>% filter(name %in% kml_data$name) %>%
+  select(x, y, name) %>% collect()
+
+xys <- left_join(x = xy_tabs, y = kml_data, by = "name")
+
+```
+
+## Convert to polygons
+```{r, eval = FALSE}
+gcsstr <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0"
+gpols <- point_to_gridpoly(data.table(xys), w = 0.005 / 2, 
+                           NewCRSobj = gcsstr, OldCRSobj = gcsstr)
+gpols2 <- left_join(gpols, xys %>% select(name, kml_type), by = "name")
+```
+
+Write out to disk for evaluation in QGIS
+```{r, eval = FALSE}
+st_write(gpols2, dsn = "../../data/interim/qi-grids.sqlite", delete_dsn = TRUE)
+```
+
+## Pare down Q fields 
+
+Based on intersections with grids.
+```{r, eval = FALSE}
+# read in Q fields
+sql <- "select name, geom_clean from qaqcfields"
+qflds <- st_read_db(con, query = sql, geom_column = "geom_clean")
+
+nms <- unique(qflds$name)
+qgint <- lapply(nms, function(x) {  # x <- nms[3]
+  a <- qflds %>% filter(name == x)
+  b <- gpols2 %>% filter(name == x)
+  aa <- suppressMessages(a[unlist(st_intersects(b, a)), ])
+  aa <- suppressWarnings(st_cast(aa, "POLYGON"))
+  # plot(st_geometry(aa))
+  # plot(st_geometry(b), add = TRUE)
+})
+notnulls <- which(sapply(qgint, function(x) nrow(x) > 0))
+
+# Cleaned q polygons, with non-intersecting fields dropped
+qgintcl <- do.call(rbind, qgint[notnulls])
+```
+
+## Write back to AfricaSandbox
+
+First clean out existing qaqcfields table
+```{r, eval = FALSE}
+qaqcsorig <- unique((tbl(con, "qaqcfields") %>% select(name) %>%
+                      collect())$name)
+qaqcsorig <- sort(qaqcsorig)
+qstr <- paste0(" (", paste0("'", qaqcsorig, "'", collapse = ","), ")")
+sql <- paste0("DELETE from qaqcfields WHERE name in", qstr)
+DBI::dbExecute(con, sql)
+
+st_write_db(con, qgintcl, "qaqcfields", row.names = FALSE, drop = TRUE)
+DBI::dbSendQuery(con, 
+                 "ALTER TABLE qaqcfields RENAME wkb_geometry TO geom_clean")
+DBI::dbSendQuery(con, 
+                 "ALTER TABLE qaqcfields ADD COLUMN gid serial PRIMARY KEY")
+DBI::dbSendQuery(con, "CREATE INDEX qaqcfields_names_idx ON qaqcfields (name);")
+DBI::dbSendQuery(con, "VACUUM ANALYZE qaqcfields;")
+DBI::dbSendQuery(con, "CLUSTER qaqcfields USING qaqcfields_pkey;")
+
+```
+
+
+
+
+  
+

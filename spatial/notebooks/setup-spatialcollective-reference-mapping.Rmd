@@ -1,0 +1,191 @@
+# Setting Up Africa/`mapper` 
+
+The following are post-migration tweaks to set up mapper's Africa database so that SpatialCollective can start developing reference maps.  
+
+
+## Database changes
+The following changes need to be made: 
+
+- `scenes_data` needs to be updated to have the latest records
+- `kml_data` needs to be updated to reflect the Q sites (which will be listed as F sites) that they should map. 
+    - `master_grid` needs to be edited accordingly, so that Qs are Qs, and Q sites to map are Fs. 
+- The 15 Q sites in question need to be added into kml_data
+    - They might also still need Planet scenes for them
+
+## `mapper` changes
+
+- Run in standalone mode, only turning on `create_hit_daemon`. 
+
+## Database changes
+### `scenes_data`
+
+Clear out scenes_data on Africa
+```{r, eval=FALSE}
+library(rmapaccuracy)
+library(dplyr)
+
+coninfo <- mapper_connect(host = "crowdmapper.org")
+# coninfo <- mapper_connect()
+sdcon <- coninfo$con
+
+afcon <- DBI::dbConnect(RPostgreSQL::PostgreSQL(), host = "crowdmapper.org",
+# afcon <- DBI::dbConnect(RPostgreSQL::PostgreSQL(),
+                        dbname = "Africa", user = coninfo$dinfo$user, 
+                        password = coninfo$dinfo$password)
+
+# Pull in Sandbox's scenes_data
+# scenes <- tbl(coninfo$con, "scenes_data") %>% collect()
+# scenes %>% filter(tms_url == "")
+# afscenes <- tbl(afcon, "scenes_data") %>% collect()
+
+dsql <- "delete from scenes_data"
+DBI::dbSendQuery(afcon, dsql)
+```
+
+Migrate scenes data. Note this can only be run locally on mapper, not remote, because of ssl being off for psql
+```{r, eval = FALSE}
+library(rmapaccuracy)
+library(dplyr)
+coninfo <- mapper_connect()
+sdcon <- coninfo$con
+afcon <- DBI::dbConnect(RPostgreSQL::PostgreSQL(),
+                        dbname = "Africa", user = coninfo$dinfo$user, 
+                        password = coninfo$dinfo$password)
+
+# migrate pgsql 
+pgsql <- paste0("PGPASSWORD=", coninfo$dinfo$password, 
+                " pg_dump -U postgis -a -t scenes_data", 
+                " AfricaSandbox > pgsql/migration/scenes_data.sql")
+                # " AfricaSandbox | psql Africa")
+system(pgsql)
+pgsql <- paste0("PGPASSWORD=", coninfo$dinfo$password,
+                " psql -U ", coninfo$dinfo$user,
+                " Africa < pgsql/migration/scenes_data.sql")
+system(pgsql)
+
+# scenes <- scenes %>% arrange(cell_id)
+# cnter <- seq(1, nrow(scenes), 1000)
+# for(i in 1:nrow(scenes)) {  # i <- 1
+#   if(i %in% cnter) print(i)
+#   d <- scenes[i, ]
+#   sqls <- paste0("insert into scenes_data (provider, scene_id, cell_id,",
+#                  "season, global_col, global_row, url, tms_url, date_time)",
+#                  " values", 
+#                  " ('", d$provider, "', '", d$scene_id, "', '", d$cell_id, 
+#                  "', '", d$season, "', '", d$global_col, "', '", d$global_row, 
+#                  "', '", d$url, "', '",  d$tms_url, "', '", d$date_time, "')")
+#   # print(i)
+#   
+#   ret <- DBI::dbSendQuery(afcon, sqls)
+# }
+
+```
+
+## Add Q sites to kml_data
+
+This can be done remotely
+```{r, eval = FALSE}
+library(sf)
+
+# select Q sites to be made into reference maps
+q_sites_fin <- read_sf("spatial/data/reference/q_sites_all_slim4.sqlite")
+q_sites_ghana_new <- read_sf("spatial/data/reference/q_sites_ghana_new2.sqlite")
+
+nms <- unique(c(q_sites_ghana_new$name, q_sites_fin$name))
+mgrid_names <- tbl(afcon, "master_grid") %>% filter(name %in% nms) %>% 
+  dplyr::select(name, id, x, y, avail) %>% collect() %>% arrange(id) %>% 
+  data.table(.)
+
+scenes <- tbl(afcon, "scenes_data") %>% collect()
+# all in
+# (mgrid_names %>% pull(id)) %in% (scenes %>% distinct(cell_id) %>% pull())
+
+kml_data <- tbl(afcon, "kml_data") %>% collect()
+mg <- mgrid_names[!name %in% kml_data$name]  # remote names already in Q
+# DBI::dbSendQuery(afcon, "DELETE from kml_data where gid > 22")
+# add in Q sites to map into kml_data as F sites
+for(i in 1:nrow(mg)) {  # i <- 1
+  d <- mg[i, ]
+  sqls <- paste0("insert into kml_data (kml_type, name)",
+                 " values ('F', '", d$name, "')")
+  # print(i)
+
+  ret <- DBI::dbSendQuery(afcon, sqls)
+}
+```
+
+## Update avail in master_grid
+```{r, eval = FALSE}
+sqlr <- paste0(" (", paste0("'", mg$name, "'", collapse = ","), ")")
+sqls <- paste0("update master_grid set avail='F' where name in ", sqlr)
+DBI::dbExecute(afcon, sqls)
+
+# check it for F
+mgchk <- tbl(afcon, "master_grid") %>% 
+  filter(name %in% mg$name) %>% select(name, id, x, y, avail) %>% collect()
+# mgchk$avail
+
+kml_data <- tbl(afcon, "kml_data") %>% collect() %>% data.table(.)
+# kml_data[, table(kml_type)]
+mg_q_chk <- tbl(afcon, "master_grid") %>% 
+  filter(name %in% kml_data[kml_type == "Q", name]) %>%
+  select(name, id, x, y, avail) %>% collect()
+all(mg_q_chk$avail == "Q")
+```
+
+All looks good.  
+
+## Let's remove the agroforesty category
+
+From both databases
+
+```{r, eval = FALSE}
+categ_sb <- tbl(coninfo$con, "categories") %>% collect()
+categ_af <- tbl(afcon, "categories") %>% collect()
+
+sqls <- "delete from categories where category = 'agroforestry'"
+DBI::dbExecute(afcon, sqls)
+
+# sqls2 <- "delete from user_maps where category = 'agroforestry'"
+# DBI::dbExecute(coninfo$con, sqls2)
+# DBI::dbExecute(coninfo$con, sqls)
+```
+
+## Check Planet availability
+
+For names in kml_data
+```{r, eval = FALSE}
+
+mgchk3 <- tbl(afcon, "master_grid") %>% 
+  filter(name %in% kml_data[, name]) %>% select(name, id, x, y, avail) %>%
+  collect() %>% data.table(.)
+kml_scenes <- scenes %>% filter(cell_id %in% mgchk3$id)
+
+f <- "individual_sites_needing_images7.csv"
+mgchk3[!id %in% kml_scenes$cell_id][, .(id, x, y, name)] %>% 
+  fwrite(., file = file.path("spatial/data/processed", f))
+# kml_scenes %>% filter(tms_url == '')
+```
+
+Was missing for some older Q sites, so re-ran downloader.
+
+## Update Configuration Parameters
+```{r, eval = FALSE}
+# Standalone mode
+sqls <- "update configuration set value='true' where key='Hit_StandAlone'" 
+DBI::dbExecute(afcon, sqls)
+
+sqls <- "update configuration set value='true' where key='Hit_StandAlone'" 
+DBI::dbExecute(afcon, sqls)
+
+sqls <- "update configuration set value='3' where key='Hit_MaxAssignmentsF'" 
+DBI::dbExecute(afcon, sqls)
+
+
+```
+
+
+
+
+    
+    

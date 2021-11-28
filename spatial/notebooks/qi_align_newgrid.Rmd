@@ -1,0 +1,125 @@
+---
+title: "Replace existing Q/I sites"
+author: "Lyndon Estes & Lei Song"
+date: "3/6/2018"
+output: 
+  html_document:
+    theme: united
+    number_sections: true 
+    highlight: tango
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, eval = FALSE)
+```
+
+## Pre-work
+
+Load the essential packages and define the constants.
+
+```{r prework}
+library(rgdal)
+library(rgeos)
+library(sf)
+library(dplyr)
+library(glue)
+library(data.table)
+library(raster)
+library(gdalUtils)
+library(yaml)
+params <- yaml.load_file(file.path(Sys.getenv('PYTHONPATH'),'config.yaml'))
+
+p_kmls <- "kmls_static"
+p_grid <- "spatial/data/interim/"
+p_dat <- "spatial/data/external/"
+p_old <- "external/production_062016/data/07112017/"
+p_oldg <- "external/ext_data/"
+p_newg <- "external/ext_data/"
+alb <- paste("+proj=aea +lat_1=20 +lat_2=-23 +lat_0=0 +lon_0=25 +x_0=0 +y_0=0",
+             "+ellps=WGS84 +datum=WGS84 +units=m +no_defs") 
+epsg <- "+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs"
+
+## Custom Albers read-in from mapper database, for Zambia kmls from old grid
+load(file.path(p_dat, "prjstr.rda"))
+```
+
+## Get centriods
+
+Read in KMLs of static file system and get the centroids for them.
+
+```{r getCentriods}
+## Read-in centroids
+kmlcentroids <- lapply(dir(p_kmls, full.names = TRUE), function(x) {
+        kml <- read_sf(x)
+        pt <- st_transform(st_centroid(st_transform(kml, alb)), st_crs(kml))
+        pt <- st_bbox(pt)[1:2]
+        data.frame("name" = kml$Name, "x" = unname(pt[1]), "y" = unname(pt[2]), 
+             stringsAsFactors = FALSE)
+})
+ptmat <- do.call(rbind, kmlcentroids)
+
+## Grab the old kml sites
+oldkmls <- fread(file.path(p_old, "kmls.csv"))
+zmsites <- oldkmls[kml_type == "Q" & like(name, "ZM")]
+```
+
+## Align centriolds
+
+Extract cell IDs from new master grid brick, as well as the left behind Zambia ones from the old master brick.
+
+```{r alignCentriods}
+mgrid <- raster(file.path(p_grid, "africa_master_brick.tif"))  # new grid tif file
+mgrido <- fread(file.path(p_oldg, "africa_master_grid.csv"))  # old grid csv file
+
+## First, intersect points with the old master brick to get handful of Zambia 
+# Q sites
+zmq <- mgrido[name %in% zmsites$name]
+zmq <- zmq[, list(x, y, name, ID, zone)]
+setnames(zmq, "ID", "id")
+coordinates(zmq) <- ~x + y
+proj4string(zmq) <- alb
+
+zmq <- spTransform(zmq, prjstr[unique(zmq$zone)])
+zmq <- spTransform(zmq, crs(mgrid))
+zmq@data <- zmq@data[, c("name"), drop = FALSE]
+
+## Second, get the kmls
+coordinates(ptmat) <- ~x + y
+proj4string(ptmat) <- crs(mgrid)
+ptmat <- rbind(ptmat, zmq)
+
+ptbufs <- gBuffer(ptmat, width = 0.011, byid = TRUE)
+
+# Cells in master grid overlaped with ptbufs
+vals <- extract(mgrid, ptbufs, cellnumbers = TRUE)
+valsdf <- do.call(rbind, vals)
+
+# Clean the duplicated cells
+ids <- unique(valsdf[, 2])
+```
+
+## Get the names of overlapped cells
+
+Based on cell IDs to get their names, then save the names into database.
+
+```{r getname}
+min_ids <- min(ids)
+
+# Get the names of old kmls
+mgridn <- fread(file.path(p_newg, "africa_master_grid_new.csv")) # new grid csv file
+mgridn_subset <- mgridn[ID >= min_ids - mgrid@ncols * 4] # minish the new grid
+
+ids_name <- mgridn_subset[ID %in% ids]
+ids_name[, (c("ID", "x", "y", "fwts", "avail")) := NULL]
+
+## Write the names into database
+# user <- params$mapper$db_username
+# password <- params$mapper$db_password
+
+con <- DBI::dbConnect(RPostgreSQL::PostgreSQL(),
+                      dbname = params$mapper$db_sandbox_name,   
+                      user = user,
+                      password = password)
+
+dbWriteTable(con, "oldkml", ids_name, overwrite = TRUE)
+```

@@ -1,0 +1,719 @@
+---
+title: "Identify Growing and Non-Growing Seasons"
+output: html_document
+---
+
+## Overview
+
+Using WorldClim data, and approach based on long-term monthly mean rainfal. Rank months according to how much rainfall they receive, and what percent of total rainfall that is. 
+
+## Data
+
+CHIRPS precipitation climatology, downloaded from: 
+ftp://chg-ftpout.geog.ucsb.edu/pub/org/chg/products/CHPclim/
+```{r, eval = FALSE}
+library(raster)
+library(sf)
+library(dtraster)
+library(RColorBrewer)
+library(gdalUtils)
+
+# read in Africa master grid
+p_root <- getwd()
+p_intdat <- file.path(p_root, "spatial/data/interim/")
+p_extdat <- file.path(p_root, "spatial/data/external/climatology/chirps")
+p_chpclim <- "/Users/lestes/Dropbox/data/climate/rainfall/CHPclim_land/monthly"
+
+afgrid <- raster(file.path(p_intdat, "africa_master_brick.tif"))
+
+
+gcsstr <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0"
+f <- file.path("/Users/lestes/Dropbox/projects/activelearning/mapperAL/",
+               "spatial/data/external/africa_noisl_gcs.sqlite")
+africa <- read_sf(f)
+st_crs(africa) <- gcsstr
+# africar <- fasterize::fasterize(africa, s_startr)
+
+# rf <- getData(name = "worldclim", var = "prec", res = 10, 
+#               path = "spatial/data/external")
+# rfaf <- crop(rf, as_Spatial(africa))
+
+f_chpclim <- dir(p_chpclim, full.names = TRUE)
+
+r <- raster(f_chpclim[1])  # pick up resolution
+chrps <- lapply(1:length(f_chpclim), function(i) {  #  i <- 1
+  onm <- file.path(p_extdat, gsub(".tif", ".af.tif", basename(f_chpclim[i])))
+  gdalwarp(srcfile = f_chpclim[i], dstfile = onm, te = st_bbox(afgrid), 
+         r = "bilinear", multi = TRUE, tr = res(r), srcnodata = -9999, 
+         overwrite = TRUE, output_Raster = TRUE)
+})
+chrps_s <- stack(chrps)
+```
+
+## Processing
+### Rank months by rainfall
+```{r, eval = FALSE}
+rftot <- calc(chrps_s, sum)
+pctf <- function(x) x / sum(x)
+mo_pct <- calc(chrps_s, pctf)
+# plot(mo_pct, zlim = c(0, 1))
+
+# rank months by rainfall
+rankna <- function(x) {
+  if(all(!is.na(x))) {
+    xrank <- rank(x, ties.method = "random")
+    # xsort <- 1:length(xsort)
+  } else {
+    xrank <- x
+  }
+  xrank
+}
+rfrank <- calc(chrps_s, rankna)
+# plot(rfrank)
+```
+
+#### Monthly rainfall as percent of total
+
+Calculate the total percentages of rainfall in the lowest and highest rainfall parts of the season
+
+```{r, eval = FALSE}
+# proportion of total annual rainfall in the 4 lowest ranked months, from 1-4
+# lowest ranked
+library(doMC)
+registerDoMC(5)
+lowest <- foreach(i = 1:5, .combine = stack) %dopar% {
+  os_mos <- rfrank == i
+  pct <- calc(os_mos * mo_pct, sum)
+  pct
+}
+
+# proportion of total annual rainfall in the 5 highest ranked months, from 8-12
+# highest ranked
+highest <- foreach(i = 8:12, .combine = stack) %dopar% {
+  os_mos <- rfrank == i
+  pct <- calc(os_mos * mo_pct, sum)
+  pct
+}
+
+```
+
+#### Convert Rank Back to Month number
+Convert rank back to month, for each of the 5 lowest and highest ranked months, beginning with lowest and ending with 5th ranked month
+```{r, eval = FALSE}
+registerDoMC(5)
+lowest_mos <- foreach(i = 1:5) %dopar% {  #  i <- 1
+  # l <- lowest[[i]] <= 0.2  # plot(lowest[[1]] <= 0.2)
+  f1 <- function(x) {
+    if(all(!is.na(x))) {
+      o <- which(x == i)
+    } else {
+      o <- NA#rep(NA, i + 1)  # prevent NA failures from calc
+    }
+    return(as.numeric(o))
+  }
+  sel <- calc(rfrank, fun = f1)  # select from ranked month stack
+  # selm <- mask(sel, l, maskvalue = 0)  # mask out where selected months > 20% rf
+}
+lowest_moss <- stack(lowest_mos)
+
+highest_mos <- foreach(i = 8:12) %dopar% {  #  i <- 1
+  f1 <- function(x) {
+    if(all(!is.na(x))) {
+      o <- which(x == i)
+    } else {
+      o <- NA
+    }
+    return(as.numeric(o))
+  }
+  sel <- calc(rfrank, fun = f1)  
+}
+highest_moss <- stack(highest_mos)
+
+
+# sort months into their order
+sortna <- function(x) {
+  if(all(!is.na(x))) {
+    xsort <- sort(x)
+  } else {
+    xsort <- x
+  }
+  xsort
+}
+lowest_sort <- calc(lowest_moss, sortna)
+highest_sort <- calc(highest_moss, sortna)
+# plot(highest_sort, zlim = c(1, 12))
+```
+
+#### Identify start and end months of dry season
+
+1. Find discontiguities in the five driest months
+
+Find the difference between each month number and its neighbor, and N of times there is a discontinguities more than 2 months (indicating discontiguity)
+
+- 1 discontiguity means simply that the dry season straddles years (e.g. begins in November ends in March, mostly Northern Hemisphere). 
+- 2 or more indicates multi-modality
+
+2. Select the date range
+
+For areas where there is: 
+
+- 0 discontiguity:
+    - take the min and max of the sorted range as the start and end months 
+- 1 or more discontiguity:
+    - check if there are months on both sides of the new year, e.g. at least in Oct-Dec and 1 in Jan-Mar. If so, add 12 to Jan-March. If not, leave alone.
+    - take the range of the longest uninterrupted stretch of dry months
+    - subtract 12 if any values > 12
+
+```{r, eval = FALSE}
+## selection functions
+# find discontinuities
+dfunc <- function(x) {
+  length(which(abs(diff(as.vector(x))) > 2))
+}
+
+# select longest continuous series (defaults to first in series if tied)
+dfunc2 <- function(x) {  # x <- bimodal_sortm[cid][1, ]
+  # solution from here: bit.ly/2tsrjb3
+  temp <- cumsum(c(1, diff(x) - 1))
+  temp2 <- rle(temp)
+  range(x[which(temp == with(temp2, values[which.max(lengths)]))])
+}
+
+# convert to data.table
+# lowest_sortrf <- stack(rftot, lowest_sort)  # add total rainfall layer
+lowest_sortdt <- na.omit(as.data.table(lowest_sort))
+setnames(lowest_sortdt, names(lowest_sortdt)[-c(1:2)], paste0("mo", 1:5))
+         # c("rf", paste0("mo", 1:5)))
+
+# set up blocks for parallelizing
+n <- nrow(lowest_sortdt)
+nworkers <- 8  # n processors
+size <- round(n / nworkers)
+rowstart <- (0:(nworkers - 1)) * size + 1
+nrows <- rep(size, length(rowstart))
+dif <- nworkers * size - n
+nrows[length(nrows)] <- nrows[length(nrows)] - dif
+for(i in 1:length(rowstart)) {
+  ii <- c(rowstart[i], rowstart[i] - 1 + nrows[i])
+  lowest_sortdt[ii[1]:ii[2], block := i]
+}
+
+# selecting beginning and end of dry season
+# plot(rftot < 100)
+minover <- 5 - 1  
+minunder <- 12 - minover + 1
+registerDoMC(nworkers)
+dry_seas <- foreach(i = 1:nworkers, .combine = "rbind") %dopar% {  # i <- 1
+  DT <- lowest_sortdt[block == i]  # split by block
+  DT[, block := NULL]  # drop block variable
+  # process seasons in block
+  # dry_win_block <- do.call(rbind, lapply(sample(1:nrow(DT), 20), function(x) {
+  dry_win_block <- do.call(rbind, lapply(1:nrow(DT), function(x) { #  x <- 1
+    dat <- unlist(DT[x, ])
+    v <- dat[3:length(dat)]
+    vd <- dfunc(v)
+    if(vd == 0) {  # dry months all contiguous and in Southern Hemisphere 
+      o <- range(v)
+      if(o[2] < o[1]) o <- rev(o)  # correct for year straddle
+    } 
+    if(vd != 0) { 
+      if(any(any(v <= minover) & any(v >= minunder))) {  # dry straddling yr
+        v2 <- v
+        v2[v2 <= minover] <- v2[v2 <= minover] + 12  # add 12 to 1:3 months
+        v2 <- sort(v2)  
+        o <- dfunc2(v2)  # select longest sequence
+        o[o > 12] <- o[o > 12] - 12  # reset 13:15 to 1:3
+      } else {  # discontinuous dry months, but not straddling new year
+        o <- dfunc2(v)  # select longest sequence
+      }
+    }
+    o
+  }))
+}
+  
+dry_seas <- data.table(dry_seas)
+dry_seasf <- cbind(lowest_sortdt[, .(x, y)], dry_seas)
+setnames(dry_seasf, c("V1", "V2"), c("d1", "d2"))
+# all(dry_winsdtf2 == dry_winsdtf)
+
+# rasterize
+dry_seasr <- dt_to_raster(dry_seasf, CRSobj = proj4string(chrps_s))
+
+# take a look
+png("spatial/notebooks/figures/dry-season.png", height = 2.5, width = 5, 
+    units = "in", res = 300)
+par(mar = c(0, 0, 1, 1), mfrow = c(1, 2))
+for(i in 1:nlayers(dry_seasr)) {
+  plot(dry_seasr[[i]], main = c("Start", "End")[i], box = FALSE, axes = FALSE, 
+       col = c("blue4", rev(brewer.pal(n = 11, name = "BrBG"))))
+}
+dev.off()
+# plot(st_geometry(africa), add = TRUE)
+```
+
+![](figures/dry-season.png)
+
+Applying masking for the messy areas in the Sahara
+
+```{r, eval = FALSE}
+# lat long filters
+latr <- dry_seasr[[1]]
+latr[] <- yFromCell(dry_seasr[[1]], 1:ncell(dry_seasr[[1]]))
+lonr <- dry_seasr[[1]]
+lonr[] <- xFromCell(dry_seasr[[1]], 1:ncell(dry_seasr[[1]]))
+
+# masking
+msk1 <- ((latr > 11) & (lonr < 38)) * dry_seasr[[1]]
+
+msk1bb <- st_bbox(msk1)
+nw <- 36
+newext <- c(msk1bb[1] - 0.05 * nw, msk1bb[3] + 0.05 * nw, msk1bb[2] - 0.05 * nw,             msk1bb[4] + 0.05 * nw)
+msk1w <- setExtent(msk1, newext, keepres = TRUE)
+msk1w2 <- resample(msk1, msk1w, method = "ngb")
+# plot(msk1w2)
+# plot(msk1, add = TRUE, col = topo.colors(12))
+
+msk1agg <- aggregate(msk1w2, fact = 9, fun = modal, na.rm = TRUE)
+# plot(msk1agg)
+w <- matrix(1, nrow = 9, ncol = 9)
+msk2agg <- focal(x = msk1agg, w = w, fun = modal, na.rm = TRUE)
+msk2disagg <- disaggregate(msk2agg, fact = 9)#, msk1) * (msk1 > 0)
+# plot(msk2agg)
+msk2disagg <- crop(msk2disagg, msk1w2)# * (msk1 > 0)
+par(mar = c(0, 0, 0, 0))
+plot(msk2disagg, box = FALSE, axes = FALSE)
+msk2 <- mask(msk2disagg, msk1w2)
+msk2 <- crop(msk2, msk1)
+# plot(msk2 == 1)
+# 
+# Pick up stray areas remaining in Southern Sahara and on far Western tip
+msk3 <- (msk2 >= 7) * msk2
+# plot(msk3)
+# msk3 <- (msk2disagg > 8) * msk2disagg
+msk3[msk3 == 0] <- NA
+msk3_infill <- Which((msk2 == 6 | msk2 < 3) & (latr < 25 & latr > 12) & 
+                       (lonr > 0 & lonr < 21))
+msk3_infill <- msk3_infill + Which((msk2 < 3) & (latr < 18 & latr > 12) & 
+                                     (lonr < 0 & lonr > -20))
+# plot(msk3_infill)
+
+# fill them with most frequent value to create southern Sahara mask
+# i.e. reset all of Southern Sahara dry start to most frequent value
+ftab <- data.table(freq(msk3))
+mostfreq <- na.omit(ftab)[which.max(count), value]
+msk3[is.na(msk3)] <- 0
+# plot(msk3)
+msk4 <- msk3 + (msk3_infill * mostfreq)  # fill it back in
+msk4f <- (msk4 > 0 & (latr < 25 & latr > 21) & (lonr > -10 & lonr < -2)) == 0
+msk4 <- msk4 * msk4f
+ssahara_dstart <- (msk4 > 0) * mostfreq
+# plot(ssahara_dstart)
+
+# Northern Sahara
+msk5 <- (ssahara_dstart == 0) * msk2#disagg
+# plot(msk5)
+msk5[msk5 == 0] <- NA
+ftab <- data.table(freq(msk5))
+mostfreq <- na.omit(ftab)[which.max(count), value]
+msk5[is.na(msk5)] <- 0
+msk5_infill <- (msk5 > 0) + 
+  (latr > 32 & latr < 35 & lonr > 5 & lonr < 9)  + # NA area 1
+  (latr > 28 & latr < 30.6 & lonr > 26 & lonr < 29)  # NA area 1
+nsahara_dstart <- (msk5_infill > 0) * mostfreq  # fill it back in
+# plot(nsahara_dstart)
+
+# assemble Sahara and full continent
+sahara_start <- nsahara_dstart + ssahara_dstart
+ds <- dry_seasr[[1]]
+ds[is.na(ds)] <- 0
+plot(ds)
+dry_start <- sahara_start + (ds * (sahara_start == 0))
+# plot(dry_start)
+
+# Dry season end, Northern Sahara
+msk6 <- (nsahara_dstart > 0) * dry_seasr[[2]]
+msk6[msk6 == 0] <- NA
+ftab <- data.table(freq(msk6))
+mostfreq <- na.omit(ftab)[which.max(count), value]
+msk6[is.na(msk6)] <- 0
+msk6_infill <- (msk6 > 0) + 
+  (latr > 32 & latr < 35 & lonr > 5 & lonr < 9)  + # NA area 1
+  (latr > 28 & latr < 30.6 & lonr > 26 & lonr < 29)  # NA area 1
+nsahara_dend <- (msk6_infill > 0) * mostfreq  # fill it back in
+
+# Dry season end, Southern Sahara
+msk6 <- (ssahara_dstart > 0) * dry_seasr[[2]]
+msk6[msk6 == 0] <- NA
+ftab <- data.table(freq(msk6))
+mostfreq <- na.omit(ftab)[which.max(count), value]
+msk6[is.na(msk6)] <- 0
+# msk6_infill <- (msk6 > 0) + 
+#   (latr > 32 & latr < 35 & lonr > 5 & lonr < 9)  + # NA area 1
+#   (latr > 28 & latr < 30.6 & lonr > 26 & lonr < 29)  # NA area 1
+ssahara_dend <- (msk6 > 0) * mostfreq  # fill it back in
+
+# assemble Sahara and full continent
+sahara_end <- nsahara_dend + ssahara_dend
+ds <- dry_seasr[[2]]
+ds[is.na(ds)] <- 0
+dry_end <- sahara_end + (ds * (sahara_end == 0))
+
+# clean up Ghana coastline a bit, for start and end of season
+mskde <- (dry_end == 3) * 
+            (((lonr > -9.9 & lonr < -1.08) & (latr > 4.04 & latr < 5.56)) | 
+               ((lonr > -3.6 & lonr < -0.74) & (latr > 4.04 & latr < 6.92)))
+dry_end <- (mskde == 0) * dry_end + (mskde * 2)
+
+mskgs <- (dry_start == 12) * (((lonr > -10.05 & lonr < 0.44) & 
+                                 (latr > 3.53 & latr < 6.92)))
+w <- matrix(1, nrow = 15, ncol = 15)
+mskgsf <- focal(mskgs, w, fun = modal, na.rm = TRUE)
+dry_start <- (mskgsf * 12) + (mskgsf == 0) * dry_start
+
+#  Final start and end
+dry_seasrf <- stack(dry_start, dry_end)
+dry_seasrf[dry_seasrf == 0] <- NA
+
+# take a look
+png("spatial/notebooks/figures/dry-seasonf.png", height = 2.5, width = 5, 
+    units = "in", res = 300)
+par(mar = c(0, 0, 1, 1), mfrow = c(1, 2))
+for(i in 1:nlayers(dry_seasrf)) {
+  plot(dry_seasrf[[i]], main = c("Start", "End")[i], box = FALSE, axes = FALSE, 
+       col = c("blue4", rev(brewer.pal(n = 11, name = "BrBG"))))
+}
+dev.off()
+```
+
+![](figures/dry-seasonf.png)
+
+#### Identify start and end months of wet season
+
+Same procedure as with dry: 
+
+1. Find discontiguities in the five wettest months
+    - User a wider gap though: >3 months to qualify
+2. Select the date range with logic for 0 and 1 or more discontiguities
+
+```{r, eval = FALSE}
+## selection functions
+# find discontinuities
+dfunc <- function(x) {
+  length(which(abs(diff(as.vector(x))) > 3))
+}
+
+# convert to data.table
+highest_sortdt <- na.omit(as.data.table(highest_sort))
+
+# set up blocks for parallelizing
+n <- nrow(highest_sortdt)
+nworkers <- 8  # n processors
+size <- round(n / nworkers)
+rowstart <- (0:(nworkers - 1)) * size + 1
+nrows <- rep(size, length(rowstart))
+dif <- nworkers * size - n
+nrows[length(nrows)] <- nrows[length(nrows)] - dif
+for(i in 1:length(rowstart)) {
+  ii <- c(rowstart[i], rowstart[i] - 1 + nrows[i])
+  highest_sortdt[ii[1]:ii[2], block := i]
+}
+
+# selecting beginning and end of dry season
+# plot(rftot < 100)
+minover <- 5 - 1  
+minunder <- 12 - minover + 1
+registerDoMC(nworkers)
+wet_seas <- foreach(i = 1:nworkers, .combine = "rbind") %dopar% {  # i <- 1
+  DT <- highest_sortdt[block == i]  # split by block
+  DT[, block := NULL]  # drop block variable
+  # process seasons in block
+  wet_win_block <- do.call(rbind, lapply(1:nrow(DT), function(x) { #  x <- 1
+    dat <- unlist(DT[x, ])
+    v <- dat[3:length(dat)]
+    vd <- dfunc(v)
+    if(vd == 0) {  # wet months all contiguous and in Northern Hemisphere 
+      o <- range(v)
+      if(o[2] < o[1]) o <- rev(o)  # correct for year straddle
+    } 
+    if(vd != 0) { 
+      if(any(any(v <= minover) & any(v >= minunder))) {  # wet straddling yr
+        v2 <- v
+        v2[v2 <= minover] <- v2[v2 <= minover] + 12  # add 12 to 1:3 months
+        v2 <- sort(v2)  
+        o <- dfunc2(v2)  # select longest sequence
+        o[o > 12] <- o[o > 12] - 12  # reset 13:15 to 1:3
+      } else {  # discontinuous wet months, but not straddling new year
+        o <- dfunc2(v)  # select longest sequence
+      }
+    }
+    o
+  }))
+}
+
+wet_seas <- data.table(wet_seas)
+wet_seasf <- cbind(highest_sortdt[, .(x, y)], wet_seas)
+setnames(wet_seasf, c("V1", "V2"), c("w1", "w2"))
+# all(wet_seasf[, .(x, y)] == dry_seasf[, .(x, y)])
+
+# rasterize and check
+wet_seasr <- dt_to_raster(wet_seasf, CRSobj = proj4string(chrps_s))
+
+png("spatial/notebooks/figures/wet-season.png", height = 2.5, width = 5, 
+    units = "in", res = 300)
+par(mar = c(0, 0, 1, 1), mfrow = c(1, 2))
+for(i in 1:nlayers(wet_seasr)) {
+  plot(wet_seasr[[i]], main = c("Start", "End")[i], box = FALSE, axes = FALSE,
+       col = c("blue4", rev(brewer.pal(n = 11, name = "BrBG"))), 
+       zlim = c(1, 12))
+}
+dev.off()
+```
+
+![](figures/wet-season.png)
+
+Applying masking again, leaning on parts of the dry season masks (e.g. Northern Sahara)
+
+```{r, eval = FALSE}
+# masking
+msk1 <- (nsahara_dstart > 0) * wet_seasr[[1]]
+msk1[msk1 == 0] <- NA
+ftab <- data.table(freq(msk1))
+mostfreq <- na.omit(ftab)[which.max(count), value]
+msk1[is.na(msk1)] <- 0
+msk1_infill <- (msk1 > 0) + 
+  (latr > 32 & latr < 35 & lonr > 5 & lonr < 9)  + # NA area 1
+  (latr > 28 & latr < 30.6 & lonr > 26 & lonr < 29)  # NA area 1
+nsahara_wstart <- (msk1_infill > 0) * mostfreq
+
+msk1bb <- st_bbox(msk1)
+nw <- 36
+newext <- c(msk1bb[1] - 0.05 * nw, msk1bb[3] + 0.05 * nw, msk1bb[2] - 0.05 * nw,             msk1bb[4] + 0.05 * nw)
+msk1w <- setExtent(msk1, newext, keepres = TRUE)
+msk1w2 <- resample(wet_seasr[[1]], msk1w, method = "ngb")
+w <- matrix(1, nrow = 11, ncol = 11)
+msk2 <- focal(x = msk1w2, w = w, fun = modal, na.rm = TRUE)
+msk2c <- mask(crop(msk2, msk1), wet_seasr[[1]])
+
+# function to mask little extents
+mask_extent <- function(e, latr, lonr) {
+  (lonr > e@xmin) & (lonr < e@xmax) & (latr > e@ymin) & (latr < e@ymax) 
+}
+msk3 <- ((nsahara_wstart == 0) * msk2c) & (latr > 0) & 
+  msk2c %in% c(2, 5, 6:7) + 
+  (latr > 12 & lonr < 35 & msk2c %in% c(1, 3:5, 7:12))
+
+# clean up danglers (masked spots outside of bulk of msk3)
+# par(mar = c(0, 0, 0, 0))
+# plot(msk3)
+# e1 <- drawExtent()
+# e2 <- drawExtent()
+# e3 <- drawExtent()
+# e4 <- drawExtent() 
+# e5 <- drawExtent() 
+# e6 <- drawExtent() 
+# e7 <- drawExtent() 
+# e8 <- drawExtent()
+# e9 <- drawExtent()
+
+# clean up inclusions (areas left out of bulk area of msk3)
+# e8 <- drawExtent()
+# e9 <- drawExtent()
+# e10 <- drawExtent()
+# e11 <- drawExtent()
+# e12 <- drawExtent()
+# exts <- list(e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12)
+# save(exts, file = "spatial/data/interim/exts.rda")
+load("spatial/data/interim/exts.rda")
+msk_exclude <- (mask_extent(exts[[1]], latr, lonr) + 
+                  mask_extent(exts[[2]], latr, lonr) + 
+                  mask_extent(exts[[3]], latr, lonr) + 
+                  mask_extent(exts[[4]], latr, lonr) +
+                  mask_extent(exts[[5]], latr, lonr) + 
+                  mask_extent(exts[[6]], latr, lonr) + 
+                  mask_extent(exts[[7]], latr, lonr) + 
+                  mask_extent(exts[[8]], latr, lonr) + 
+                  mask_extent(exts[[9]], latr, lonr) +
+                  mask_extent(exts[[10]], latr, lonr) + 
+                  mask_extent(exts[[11]], latr, lonr) + 
+                  mask_extent(exts[[12]], latr, lonr)
+                ) == 0
+# msk_include <- mask_extent(exts[[10]], latr, lonr) + 
+#   mask_extent(exts[[11]], latr, lonr) +
+#   mask_extent(exts[[12]], latr, lonr) 
+
+# mask out those areas
+# msk4 <- ((msk3 + (msk_include == 1)) * msk_exclude) > 0
+msk4 <- (msk3 * msk_exclude) > 0
+
+# Set the Congolian-Sahelian zone to same date range
+msk5 <- msk4 * wet_seasr[[1]]
+# plot(msk5)
+msk5[msk5 == 0] <- NA
+ftab <- data.table(freq(msk5))
+mostfreq <- na.omit(ftab)[which.max(count), value]
+# most frequent start month is June in this zone, but July looks like meat of
+# rains, so might want to toggle to that at some stage
+msk5[is.na(msk5)] <- 0
+ssahara_wstart <- (msk5 > 0) * mostfreq
+# plot(ssahara_wstart)
+
+# put them together
+sahara_wstart <- ssahara_wstart + nsahara_wstart
+sahara_wstart <- sahara_wstart * 
+  (((ssahara_wstart > 0) & (nsahara_wstart > 0)) == 0)
+sahara_wstart <- sahara_wstart + (((latr > 15) & (sahara_wstart == 0)) * 
+  freq(ssahara_wstart)[2, 1])  # correct for some interstitial excluded areas
+# plot(sahara_wstart)
+
+# assemble the rest of Africa
+ws <- wet_seasr[[1]]
+ws[is.na(ws)] <- 0
+wet_start <- sahara_wstart + ((sahara_wstart == 0) * ws)
+wet_start[wet_start == 2] <- 1  # set areas that are Feb to Jan
+
+## now do the wet season end
+# northern sahara
+we <- wet_seasr[[2]]
+msk6 <- (nsahara_wstart > 0) * we
+msk6[msk6 == 0] <- NA
+ftab <- data.table(freq(msk6))
+mostfreq <- na.omit(ftab)[which.max(count), value]
+nsahara_wend <- (nsahara_wstart > 0) * mostfreq
+
+# southern sahara
+msk7 <- (ssahara_wstart > 0) * we
+msk7[msk7 == 0] <- NA
+ftab <- data.table(freq(msk7))
+mostfreq <- na.omit(ftab)[which.max(count), value]
+ssahara_wend <- (ssahara_wstart > 0) * mostfreq
+plot(ssahara_wend)
+
+sahara_wend <- nsahara_wend + ssahara_wend
+sahara_wend <- sahara_wend + (((latr > 15) & (sahara_wend == 0)) * 
+  freq(ssahara_wend)[2, 1])  # correct for some interstitial excluded areas
+# plot(sahara_wend)
+
+# put it together with the rest and filter
+we[is.na(we)] <- 0
+wet_end <- sahara_wend + ((sahara_wend == 0) * we)
+# plot(wet_end)
+
+# clean up coastal Gulf of Guinea high rainfall area
+wsgs <- (wet_start %in% c(3:4)) & (lonr > -12 & lonr < 5)
+wegs <- (wet_end %in% c(6, 10) & (lonr > -12 & lonr < 5))
+wsegs <- wsgs | wegs
+wsegs5 <- (wet_start == 5) & ((latr > 3 & latr < 10) & (lonr > -12 & lonr < 5))
+wsegs2 <- (wsegs * 2 + wsegs5) > 1
+w <- matrix(1, nrow = 11, ncol = 11)
+wsegsf <- focal(x = wsegs2, w = w, fun = modal, na.rm = TRUE)
+wsegsf2 <- (wsegsf + ((latr > 3 & latr < 6) & (lonr > -8.5 & lonr < 2))) > 0
+
+# wsegsf2[is.na(wsegsf2)] <- 0
+mostfreq_start <- freq(wsegsf2 * wet_start)[-1, ]  # most frequent wet start
+mostfreq_start <- mostfreq_start[which.max(mostfreq_start[, 2]), 1]
+mostfreq_end <- freq(wsegsf2 * wet_end)[-1, ]  # most frequent wet end
+mostfreq_end <- mostfreq_end[which.max(mostfreq_end[, 2]), 1]
+
+wet_seasrf <- stack((wsegsf2 * mostfreq_start) + (wet_start * (wsegsf2 == 0)), 
+                    (wsegsf2 * mostfreq_end) + (wet_end * (wsegsf2 == 0)))
+fmask <- (we > 0) | (latr > 32 & latr < 35 & lonr > 5 & lonr < 9) + # NA area 1
+  (latr > 28 & latr < 30.6 & lonr > 26 & lonr < 29)  # NA area 1)
+wet_seasrf <- mask(wet_seasrf, fmask, maskvalue = 0)
+# plot(wet_seasrf[[1]])
+
+# take a look
+png("spatial/notebooks/figures/wet-seasonf.png", height = 2.5, width = 5,
+    units = "in", res = 300)
+par(mar = c(0, 0, 1, 1), mfrow = c(1, 2))
+for(i in 1:nlayers(wet_seasrf)) {
+  plot(wet_seasrf[[i]], main = c("Start", "End")[i], box = FALSE, axes = FALSE,
+       col = c("blue4", rev(brewer.pal(n = 11, name = "BrBG"))))
+}
+dev.off()
+```
+
+## Checks 
+```{r, eval = FALSE}
+chks <- rbind.data.frame(c(35.571, 2.7109), c(47.8572, 8.938389), 
+                         c(-2.325875, 6.516588), #c(35.94673, 1.916531),
+                         c(24.80993, -8.830189),
+                         c(29.10138, 0.7264428), c(21.55435, -33.61611),
+                         c(20.68912, 5.824645), c(48.72242, -18.91232),
+                         c(8.575965, 23.81517), c(40.5893, -15.27962), 
+                         c(-3.191101, 5.459906), c(18.26523, -30.17925), 
+                         c(8.792647, 32.14623), c(21.53758, -0.9103774))
+colnames(chks) <- c("x", "y")
+desc <- c("Trimodal Albertine", "Horn of Africa", 
+          "Inner Coastal Gulf Guinea", 
+          "Unimodal S. Equator", "Unimodal Central Africa", 
+          "Tri-modal WCape", "Unimodal North Central Africa", 
+          "Eastern Madagascar", "Saharan mess", "Moz Coast", 
+          "Coastal Gulf Guinea", "WCape", "N Africa", 
+          "Congo bimodal 2")
+chks$n <- 1:nrow(chks)
+chks$desc <- desc
+coordinates(chks) <- ~x + y
+
+plot(dry_seasrf[[1]])
+extract(chks[14, ])
+chk_cells <- cellFromXY(dry_seasrf, chks)
+chkdry <- data.frame(chks$desc, t(sapply(1:length(chk_cells), function(x) {
+  c(dry_seasrf[chk_cells[x]])
+})))
+colnames(chkdry) <- c("location", "dry_start", "dry_end")
+
+chkwet <- data.frame(t(sapply(1:length(chk_cells), function(x) {
+  c(wet_seasrf[chk_cells[x]])
+})))
+colnames(chkwet) <- c("wet_start", "wet_end")
+
+chkboth <- cbind("Point" = 1:nrow(chkdry), chkdry, chkwet)
+save(chkboth, file = "spatial/notebooks/figures/chkboth.rda")
+
+png("spatial/notebooks/figures/season-checks.png", height = 2.5, width = 5, 
+    units = "in", res = 300)
+par(mar = c(0, 0, 1, 1), mfrow = c(1, 2))
+plot(dry_seasrf[[1]], box = FALSE, axes = FALSE, main = "Dry Start")
+points(chks, pch = "")
+text(chks, labels = chks$n, halo = TRUE, cex = 0.5)
+plot(wet_seasrf[[1]], box = FALSE, axes = FALSE, main = "Wet Start")
+points(chks, pch = "")
+text(chks, labels = chks$n, halo = TRUE, cex = 0.5)
+dev.off()
+```
+
+![](figures/season-checks.png)
+
+Selected values
+```{r, echo = FALSE}
+load("figures/chkboth.rda")
+knitr::kable(chkboth)
+```
+
+Checks reveal that some work is needed to clean up and simplify seasons South of the Equator, but this will be okay to start with. It now needs to be integrated into master_grid, as an additional 4 columns: 
+
+- dry_start
+- dry_end
+- wet_start
+- wet_end
+
+Note that the Middle East and small islands still need to be asked out. Those should drop out in conversion from geotiff to `data.table` in the update in create_master_grid.Rmd. 
+
+## Convert to Resolution of Master Grid
+```{r, eval = FALSE}
+# write file to disk
+p_intdat <- "spatial/data/interim/"
+seasb <- brick(stack(dry_seasrf, wet_seasrf), 
+               filename = file.path(p_intdat, "seasons.tif"))
+fo <- paste0("spatial/data/processed/seasons_005.tif")
+
+# read in master_grid
+afgrid <- brick(file.path(p_intdat, "africa_master_brick.tif"))
+
+gdalwarp(srcfile = seasb@file@name, t_srs = projection(afgrid), dstfile = fo,
+         r = "near", ot = "Byte", te = bbox(afgrid)[1:4], 
+         srcnodata = -32768, dstnodata = 0, tr = res(afgrid), of = "GTiff",
+         verbose = TRUE, overwrite = TRUE)
+```
+
+

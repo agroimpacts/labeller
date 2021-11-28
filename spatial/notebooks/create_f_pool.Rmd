@@ -1,0 +1,90 @@
+---
+title: "Create f pool"
+author: "Lei Song"
+date: "7/31/2018"
+output: 
+  html_document:
+    theme: united
+    number_sections: true 
+    highlight: tango
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Get the interaction of AQIs and master grid
+
+```{r aoi, message=FALSE, warning=FALSE, eval = TRUE}
+library(sf)
+library(raster)
+library(DBI)
+library(dplyr)
+library(dbplyr)
+library(yaml)
+library(rmapaccuracy)
+
+## Read AOIs
+aois <- st_read("spatial/data/processed/image_target_aois.geojson")
+## Read master grid
+master_grid <- raster("spatial/data/interim/africa_master_brick.tif", band = 1)
+
+## Extract the ids of master grid of AOIs
+aois_grid <- mask(master_grid, aois)
+aois_grid <- getValues(aois_grid)
+aois_grid <- aois_grid[complete.cases(aois_grid)]
+grids <- paste0("'", aois_grid, "'", collapse = ",")
+```
+
+## Update the master_grid table
+
+```{r update_master_grid, message=FALSE, warning=FALSE, eval = TRUE}
+coninfo <- mapper_connect(user = pgupw$user, password = pgupw$password, db.tester.name = "lsong")
+sql <- paste0("UPDATE master_grid SET avail='F' WHERE id in (", grids, ")")
+dbExecute(coninfo$con, sql)
+```
+
+## Make the csv file for cvml
+```{r csv, message=FALSE, warning=FALSE, eval = TRUE}
+library(aws.s3)
+coors <- coninfo$con %>% tbl("master_grid") %>% filter(id %in% aois_grid) %>% select(x, y, name) %>% collect()
+rowcol <- cbind("name" = coors$name, 
+                rmapaccuracy:::rowcol_from_xy(x = coors$x, y = coors$y))
+name_col_row <- do.call(rbind, lapply(c(1:nrow(rowcol)), function(x) {
+        paste0(rowcol[x, 1], "_", rowcol[x, 2], "_", rowcol[x, 3])
+}))
+result <- data.frame(cbind(rowcol, name_col_row))
+names(result)[4] <- "name_col_row"
+
+## Single method
+#################### Set config files for AWS##########################
+# mkdir ~/.aws
+# touch config credentials
+# 
+# Open credentials file using such as open credentials/nano credentials
+# 
+# Edit it:
+# [default]
+# aws_access_key_id = XXXXXXX
+# aws_secret_access_key = XXXXXXX
+# 
+# Open config file using such as open config/nano config
+# 
+# Edit it:
+# [default]
+# region = us-east-1
+#######################################################################
+
+
+## OR Use config.yaml file
+common_path <- file.path(coninfo$dinfo["project_root"], "common")
+params <- yaml::yaml.load_file(file.path(common_path, 'config.yaml'))
+Sys.setenv("AWS_ACCESS_KEY_ID" = params$cvml$aws_access,
+           "AWS_SECRET_ACCESS_KEY" = params$cvml$aws_secret,
+           "AWS_DEFAULT_REGION" = params$cvml$aws_region)
+
+localfile <- paste0(coninfo$dinfo[2], "/spatial/data/processed/f_pool.csv")
+write.csv(result, localfile, row.names = F)
+put_object(file = localfile, object = "s3://activemapper/f_pool.csv")
+file.remove(localfile)
+```
