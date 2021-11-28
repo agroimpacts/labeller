@@ -1,0 +1,85 @@
+ALTER TABLE assignment_data ADD column save_status_code integer;
+ALTER TABLE assignment_data ADD CONSTRAINT status_check CHECK (((status)::bpchar = ANY (ARRAY['Accepted'::bpchar, 'Abandoned'::bpchar, 'Returned'::bpchar, 'Approved'::bpchar, 'Rejected'::bpchar, 'Unsaved'::bpchar, 'Unscored'::bpchar, 'Reversed'::bpchar, 'Pending'::bpchar, 'Untrusted'::bpchar])));
+
+
+ALTER TABLE hit_data DROP COLUMN correct_name;
+ALTER TABLE hit_data ADD COLUMN max_assignments integer DEFAULT 1 NOT NULL;
+
+
+ALTER TABLE kml_data DROP COLUMN correct_name;
+ALTER TABLE kml_data ADD COLUMN mapped_count integer DEFAULT 0 NOT NULL;
+ALTER TABLE kml_data ADD COLUMN post_processed boolean DEFAULT false NOT NULL;
+
+ALTER TABLE kml_data DROP CONSTRAINT kml_type_check;
+ALTER TABLE kml_data ADD CONSTRAINT kml_type_check CHECK (kml_type = ANY (ARRAY['N'::bpchar, 'Q'::bpchar, 'I'::bpchar, 'F'::bpchar]));
+
+
+DROP TABLE kml_data_old;
+DROP TABLE fqaqc_sites_old;
+DROP TABLE newqaqc_sites_old;
+DROP TABLE qaqcfields_old;
+
+ALTER TABLE newqaqc_sites ALTER COLUMN name DROP NOT NULL;
+ALTER TABLE newqaqc_sites DROP COLUMN geom;
+ALTER TABLE newqaqc_sites ADD COLUMN geom geometry(MultiPolygon,102022);
+ALTER TABLE qaqcfields DROP COLUMN geom;
+ALTER TABLE qaqcfields ADD COLUMN geom TYPE geometry(MultiPolygon,102022);
+ALTER TABLE qaqcfields ADD COLUMN geom_clean geometry(MultiPolygon,102022);
+
+
+ALTER TABLE qual_user_maps ADD COLUMN geom_clean geometry(Polygon,4326); 
+
+
+
+ALTER TABLE user_maps DROP COLUMN correct_name;
+ALTER TABLE user_maps ADD COLUMN geom_clean geometry(Polygon,4326);
+
+ALTER TABLE worker_data DROP COLUMN cumulative_score;
+ALTER TABLE worker_data ADD COLUMN scores real[] DEFAULT '{}'::real[] NOT NULL;
+ALTER TABLE worker_data ADD COLUMN returns real[] DEFAULT '{}'::real[] NOT NULL;
+ALTER TABLE worker_data ADD COLUMN qualified boolean DEFAULT true NOT NULL;
+ALTER TABLE worker_data ADD COLUMN bonus_paid boolean DEFAULT false NOT NULL;
+
+
+
+ALTER TABLE ONLY newqaqc_sites
+    DROP CONSTRAINT newqaqc_sites_gid_pk;
+DROP INDEX newqaqc_sites_name_idx;
+ALTER TABLE ONLY newqaqc_sites
+    ADD CONSTRAINT newqaqc_sites2_pkey PRIMARY KEY (gid);
+
+ALTER TABLE ONLY qaqcfields
+    DROP CONSTRAINT qaqcfields_pkey;
+    DROP INDEX qaqcfields_name_idx;
+ALTER TABLE ONLY qaqcfields
+    ADD CONSTRAINT qaqcfields2_pkey PRIMARY KEY (gid);
+
+--------------------------------------------
+COMMENT ON COLUMN hit_data.max_assignments IS 'Max number of assignments defined for this HIT';
+COMMENT ON COLUMN kml_data.mapped_count IS 'Number of times this N or F KML has been mapped by a trusted worker.';
+
+COMMENT ON COLUMN kml_data.post_processed IS 'If true, never use this N or F KML to create a HIT.';
+
+ALTER TABLE kml_data ADD COLUMN fwts integer DEFAULT 1 NOT NULL;
+
+ALTER TABLE qaqcfields ADD COLUMN geom geometry(MultiPolygon,102022);
+
+DROP TABLE sa1kilo;
+DROP TABLE sa_flds_wgs_alb_wgs84;
+ALTER TABLE newqaqc_sites ALTER COLUMN gid DROP DEFAULT;
+ALTER TABLE qaqcfields ALTER COLUMN gid DROP DEFAULT;
+
+
+DROP SEQUENCE newqaqc_sites_gid_seq;
+DROP SEQUENCE qaqcfields_gid_seq;
+
+COMMENT ON COLUMN worker_data.scores IS 'Floating point array for calculating moving average of worker scores.';
+
+COMMENT ON COLUMN worker_data.returns IS 'Floating point array for calculating moving average of returned hits.';
+
+COMMENT ON COLUMN worker_data.qualified IS 'Set to false if worker has his Mapping Africa qualification revoked for low accuracy.';
+
+COMMENT ON COLUMN worker_data.bonus_paid IS 'Set to true when bonus has been paid for successfully taking the training.';
+
+
+

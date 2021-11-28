@@ -1,6 +1,17 @@
 //
 // *** All base layers go here ***
 //
+// Define Bing base layer.
+var bingLayer = new ol.layer.Tile({
+    title: 'Bing Aerial',
+    zIndex: 2,
+    type: 'base',
+    visible: false,
+    source: new ol.source.BingMaps({
+        key: 'key',
+        imagerySet: 'Aerial'
+    })
+});
 
 var esriLayer = new ol.layer.Tile({
     title: 'ESRI imagery',
@@ -12,18 +23,6 @@ var esriLayer = new ol.layer.Tile({
         'ArcGIS/rest/services/World_Imagery/MapServer">ArcGIS</a>',
         url: 'https://server.arcgisonline.com/ArcGIS/rest/services/' +
         'World_Imagery/MapServer/tile/{z}/{y}/{x}'
-    })
-});
-
-// Define Bing base layer.
-var bingLayer = new ol.layer.Tile({
-    title: 'Bing Aerial',
-    zIndex: 2,
-    type: 'base',
-    visible: false,
-    source: new ol.source.BingMaps({
-        key: 'key',
-        imagerySet: 'Aerial'
     })
 });
 

@@ -1,0 +1,12 @@
+# This MAILTO email address has been configured on to create an 
+# Internal Alert GitHub issue.
+# See common/procmail_crontab_issue_rc under user sandbox.
+# This crontab script is designed to run from the root account on any mapper or mapper clone server.
+MAILTO=mapper
+SHELL=/bin/bash
+
+# Min Hour(0-23) Day Month DOW Command
+15 23 * * * PGDIR=/home/mapper/labeller/pgsql;export PGPASSFILE=$PGDIR/pgpassfile_mapper;$PGDIR/daily_backup.sh >>/home/mapper/labeller/log/daily_backup.log 2>&1
+
+# Renew Let's Encrypt certs for labeller if expiring soon. Restart apache afterward.
+15 00 * * Sun (/bin/certbot renew; /sbin/service httpd restart) >>/home/mapper/labeller/log/crontabSetup.root.log 2>&1
