@@ -3,7 +3,7 @@ import sys
 from datetime import datetime
 from webob import Request, Response
 from webob.response import ResponseBodyFile
-from MappingCommon import MappingCommon
+from webapp.MappingCommon import MappingCommon
 
 def application(environ, start_response):
     req = Request(environ)

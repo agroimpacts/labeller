@@ -1,6 +1,6 @@
 from webob import Request, Response
 import datetime
-from MappingCommon import MappingCommon
+from webapp.MappingCommon import MappingCommon
 
 def application(environ, start_response):
     req = Request(environ)
