@@ -11,6 +11,10 @@ WORKDIR /opt/src
 # - numpy==1.14.3 because it's a magic version based on some "how to install
 # pandas in alpine" threads around the internet
 # - webob because it's required but was missing
+# Dependency installs are separated because some of them take _way longer_
+# than others (pandas, numpy)
+
+# System deps
 RUN apk update \
     && apk add \
         build-base \
@@ -25,19 +29,24 @@ RUN apk update \
         postgresql-dev \
         libffi-dev \
         musl-dev \
-    && ln -s /usr/include/locale.h /usr/include/xlocale.h \
-    && pip install \
+    && ln -s /usr/include/locale.h /usr/include/xlocale.h
+
+# super painful python deps
+RUN pip install \
+      shapely \
+      pyproj==1.9.3 \
+      numpy==1.14.3 \
+      geopandas==0.6.3
+
+# less painful python deps
+RUN pip install \
       uwsgi \
-      sqlalchemy==1.1.9 \
+      sqlalchemy==1.3.0 \
       Flask-User==0.6.19 \
       Flask-Migrate \
       Flask-Script \
       psycopg2-binary \
       PyGithub==1.35 \
-      shapely \
-      pyproj==1.9.3 \
-      numpy==1.14.3 \
-      geopandas==0.6.3 \
       webob==1.8.7
 
 COPY ./api/*.wsgi /opt/src/
