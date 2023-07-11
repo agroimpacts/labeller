@@ -34,14 +34,17 @@ delete from user_maps;
 delete from accuracy_data;
 delete from assignment_history;
 delete from assignment_data;
+delete from assignment_review; 
 delete from qual_user_maps;
 delete from qual_accuracy_data;
-delete from qual_assignment_data;
+delete from qual_assignment_data;  
 delete from hit_data;
 delete from scenes_data;
+delete from machine_maps; 
 
 delete from kml_data;
 alter sequence kml_data_gid_seq restart;
+alter sequence machine_maps_gid_seq restart;
 insert into kml_data (kml_type, name, hint) select kml_type, name, hint from kml_data_static order by gid;
 
 delete from incoming_names where processed=FALSE;
@@ -49,6 +52,6 @@ delete from incoming_names where processed=FALSE;
 update system_data set value=0 where key='CurQaqcGid';
 update system_data set value=0 where key='IterationCounter';
 update system_data set value=1 where key='firstAvailLine';
-update master_grid set avail = 'T' where avail in ('I', 'Q', 'F');
+update master_grid set avail = 'T' where avail in ('I', 'Q', 'F', 'E');
 
 EOD
