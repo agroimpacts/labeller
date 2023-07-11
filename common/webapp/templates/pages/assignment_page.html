@@ -1,0 +1,23 @@
+{% extends "common/page_base.html" %}  {# common/page_base.html extends layout.html #}
+
+{% block content %}
+    <!-- Indicate to the layout.html JS header logic whether this page was the result of a GET or a POST. -->
+    <script type='text/javascript'> req_method = "{{ form.reqMethod.data }}"; </script>
+	<div id="contents">
+		<div class="highlight">
+			<!--<div class="clearfix">-->
+                <span class="mapbody">
+                    <div class="trainhdr">
+                        <h3 class="maph3">Mapping Assignments</h3>
+                    </div>
+                    <!-- Add the hidden URL-encoded csrf_token as a parameter to the KML frame 
+                         script (getkml) so that it can be placed in the mapping html form -->
+                    <iframe height="{{ form.kmlFrameHeight.data }}px" width="100%%" scrolling="auto" frameborder="0" align="center" 
+                        src="{{ form.kmlFrameUrl.data }}?kmlName={{ form.kmlName.data }}&hitId={{ form.hitId.data }}&assignmentId={{ form.assignmentId.data }}&resultsAccepted={{ form.resultsAccepted.data }}&submitTo={{ form.submitTo.data }}&csrfToken={{ form.hidden_tag()|quote_plus }}"
+                        name="Inner Training Frame">
+                    </iframe>
+                </span>
+			<!--</div>-->
+		</div>
+	</div>
+{% endblock %}

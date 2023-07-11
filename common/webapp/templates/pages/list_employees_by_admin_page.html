@@ -1,0 +1,21 @@
+{% extends "common/page_base.html" %}  {# common/page_base.html extends layout.html #}
+
+{% block content %}
+	<div id="contents">
+		<!--<div class="highlight">-->
+			<div class="clearfix">
+				<h1>List Employees</h1>
+                {% for employer in employer_list %}
+                    <h2>{{ employer[0] }}</h2>
+                    <ul>
+                        {% for user in employer[1] %}
+                            <li>
+                                {{ user[0] }}, {{ user[1] }} ({{ user[2] }})
+                            </li>
+                        {% endfor %}
+                    </ul><br/>
+                {% endfor %}
+			</div>
+		<!--</div>-->
+	</div>
+{% endblock %}

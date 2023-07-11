@@ -1,0 +1,157 @@
+ChangeLog 
+
+*** KMLGenerate.1.2.3.R ***
+Created 18/10/2012
+Changes from *1.2.R
+19/10/12: 
+* Updated to remove coordinates from kml names, and to remove ".kml" from kml_names
+22/10/12: 
+* Database connections updated to reflect moving of afmap into SouthAfrica
+26/10/12: 
+* Fixed connections and changed error logger to reflect dropping of afmap
+13/6/12: 
+* Updated avail.kml.count to have no sql statement b/c kml_data no longer has hit_id
+* Ran manually to give some initial non-qaqc kmls to work with
+20/6/13:
+* Added logging for daemon start time and for pid to be recorded in separate file. 
+* Daemon start time is recorded in log file that lists NKML ids selected for writing 
+27/9/2013: 
+* Inserted call to getDBName.R into script, using output variables to determine variables for correct database 
+  (sandbox or production) and project root for writing out accuracy maps. This means that script now finds its
+  own project root rather than pulling path variable from database. 
+* Put in check function for testing environment: Program stops after checking location variables, when 
+  test.root == "Y"
+* Removed setwd() to log file directory, instead coded in log file names to have full path, to minimize 
+  errors in findings directories. 
+30/9/2013: 
+* Dennis added some additional arguments that allow script to find getDBName.R
+4/10/2013:
+* Condensed logging for reporting no new NKMLs needed.
+
+*** KMLAccuracyCheck.1.3.0.R ***
+
+Script created 19/11/2012 (version 1.2.1)
+Note on the True Skill Statistic: This has been replaced by the overall accuracy score from Version *1.2.X.R 
+onwards because it is more forgiving and gives more credit for TRUE negative errors. 
+
+Changes: 
+* Installed numerous testing switches and routines (retrieve assignment id, test from mac off-server, write 
+  accuracy measures to text file, map error components)
+* Projected coordinate system now read in EPSG id from postgis database
+* Counting user fields as error component
+* Mapping accuracy in grid box now assessed with overall accuracy, but switch allows TSS to be used 
+* Checking input polygons (qaqc and user) for overlaps, and unioning any that are found
+* Reduced code lines by moving up polygon read in functions to beginning of section codes. Introduced polygons 
+  cleaning function here, and created two new variables to record number of rows in user and qaqc fields 
+  before unioning (user_nfields, qaqc_nfields)
+  ** Changed countError function to take vectors rather than spatial objects to deal with this change
+20/11/12:
+* Fixed missing user_nfields in err.out vectors for Cases 2-4
+* Removed line feeds in cat commands, suppressed dev.off() messages
+28/11/12: 
+Version update to 1.2.2. Changes tested in 1.2.1.test.R in /Test_and_Old_R to prevent conflict with active use
+of system
+Fixes:
+* Fixed bug throwing null results in mapError: set null tp,fp,fn,tn values to 0 before passing to function 
+  calling gArea: fixes lines 155-156
+* Fixed incorrect accuracy statistic as found with assignment id 286PLSP75KLMCLHI0Z8QHQVJRSKZTB. Result too 
+  generous. Fix by making sure correct names are being referenced in call to accStatsSum. Lines 157-178
+Additions:
+* Added time stamp to output plots so that multiple results of assignment can be kept Lines 386-388
+* Added statements to pass error components to error_data table: Lines 346-349
+* Conditional statements put into lines 94-109 to allow testing with either kmlid or assignmentid entered 
+  singly
+29/11/12: 
+Fixes
+* Intersection bug caused in case 3 with fields intersection issues. Updated all by setting all gIntersection 
+  and gDifference operations to byid = T
+* Plotting option did not draw portion of QAQC outside of grid. Added qaqc.poly.out routine to case use 
+  (line 306)
+* After first fix, still found error caused in case 4 with geometries being contained by other geometries at 
+  qaqc.poly.out call under case 4. Fixed by turning off function cleanPolyByUnion and replacing with straight 
+  gUnaryUnion function. Seems to work
+* Error thrown by null tpo/tno error under case 4 where both user and qaqc fields outside of grid didn't 
+  intersect: transported in same fix from mapError function
+* Bug for plotting function caused by null tpo/fno results also fixed by adding check for is.object to 
+  conditional statement
+Additions
+* Added conditional statement and switch to toggle writing to error_data on and off
+5/4/2013: 
+Beginning point for code version update to KMLAccuracyCheck.1.2.3.R
+Fixes: 
+* Major modification: Polygon cleaning installed via pprepair to fix unclean topologies. This means that user 
+  and qaqc polygons are read in, polygon numbers counted, written to temporary ESRI shapefiles, cleaned via 
+  pprepair to new temporary shapefiles, then read back in for error checking operations. This is achieved via 
+  two new functions: 
+  ** callPprepair, which is used by createCleanTempPolyfromWKT
+  ** These replace cleanPolyByUnions and createPolyfromWKT
+* gUnaryUnion is still performed on the cleaned polygon sets to facilitate easier merges and intersects
+19/4/2013: 
+Note: Bug remains in pprepair on one set of polygons that starts an infinite loop
+13/6/2013: 
+Update to version 1.2.4.
+* Change to take argument from Turker training sites as well normal assignments
+  ** Uses this format suggested by Dennis, with modifications 
+     KMLAccuracyCheck.R ["tr"|"qa"] <kmlName> <trainingId|assignmentId>
+     where "tr" is for training sites, and "qa" for qaqc sites
+* Deleted commented out functions that persisted in version 1.2.3.
+14/6/2013: 
+* Edited feature to write error components to database, reflecting new database added for for qual_error_data.
+* Removed code to write to text error log, now redundant
+19/6/2013: 
+********** Update to version 1.3.0 ************
+* Editing to incorporate new changes to training module, where new database allows multiple user maps per 
+  training site
+* Error algorithm switched to TSS (err.switch = 2)
+* Wrote in logic to check if training error map was recorded more than once. If so, add 10 to try attempt 
+  number and write again [switched this option off]
+* Simplified logic for reading in qaqc maps. Removed check to newqaqc_sites for whether fields exist or not, 
+  which might make this table redundant. 
+* Compare to version 1.2.4 in Test_and_Old_R or in SVN to recover changes
+20/6/2013: 
+* Returned error switch to original accuracy measure, as TSS is too strict
+6/8/2013: 
+* Made modification to write TSS to *error_data tables
+12/9/2013: 
+* Bug in creating grid.sql found for "qa" case. Was set to "tr" in logic.
+26/09/2013: 
+* Inserted call to getDBName.R into script, using output variables to determine variables for correct database 
+  (sandbox or production) and project root for writing out accuracy maps. 
+27/9/2013:
+* Put in check function for testing environment: Program stops after checking location variables, when 
+  test.root == "Y"
+* Moved all supporting functions for KMLAccuracyCheck to KMLAccuracyFunctions.R, which is now sourced. 
+30/9/2013: 
+* Dennis added some additional arguments that allow script to find getDBName.R
+
+********** Update to version 1.4.0 ************
+24/06/2014:
+* New version, simplified, relies on reading in pre-cleaned geometries that have gone through the mapFix*.py
+  process.
+* Additional logic added to deal with case where cleaning routines fail for users' maps (e.g. geom_clean has 
+  null values). This invokes original function that calls pprepair to temporarily clean geometries for 
+  accuracy assessment, but does not store cleaned geometries. This check is only implemented for user maps 
+  (training or ordinary maps). The assumption is that all qaqcs will have geometries cleaned offline using 
+  mapFixBatch.py. 
+
+*** getBDName.R ***                 
+Created 26/9/2013
+
+*** KMLAccuracyFunction.R ***                 
+Created 27/9/2013
+
+*** CheckWorkerAssignment.R ***
+Created 8/10/2013 - writes out user and qaqc maps to folder in new "maps" folder, outputting link to send to 
+workers who want feedback on mapping results. 
+* Fixed bug that caused failure of shapefile creation for writing because pprepair changed number of polygons, 
+  and labelling IDs in image data table failed because of mismatch between numbers of records. This is a bug
+  that does not appear to affect KMLAccuracyCheck.
+
+
+
+
+
+
+
+
+

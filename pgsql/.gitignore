@@ -1,0 +1,5 @@
+pgpassfile_mapper
+pgpassfile_sandbox
+role_create_su.sql
+tables_to_backup.txt
+phpPgAdmin.conf

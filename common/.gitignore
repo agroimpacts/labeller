@@ -1,0 +1,6 @@
+*.pyc
+*.lck
+*.yaml
+*.yml
+crontabFile.labeller
+!config_template.yaml

@@ -1,0 +1,11 @@
+
+module procmail_allow_execution_of_python_script 1.0;
+
+require {
+	type user_home_t;
+	type procmail_t;
+	class file execute;
+}
+
+#============= procmail_t ==============
+allow procmail_t user_home_t:file execute;

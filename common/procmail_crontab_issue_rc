@@ -1,0 +1,43 @@
+# This script is run by .procmailrc.
+# It's purpose is to redirect any error email received from the mapper, sandbox, 
+# or root crontab scripts to become a GitHub alert issue.
+# To configure, create a .procmailrc file in the home directory of the user account
+# receiving the problem emails. It should only contain these 4 lines:
+#:0
+#{
+#    INCLUDERC="$HOME/labeller/common/procmail_crontab_issue_rc"
+#}
+
+# And create a .forward file in the same home directory with this 1 line:
+#"|IFS=' ' && exec /usr/bin/procmail -f- || exit 75 #user"
+
+# Remove the leading '#' characters, and copy the 5 lines exactly as is.
+
+SHELL=/bin/bash
+LOGFILE=$HOME/labeller/log/procmail.log
+VERBOSE=on
+
+# Extract the sender and subject headers
+:0hw
+FROM=|formail -c -z -xFrom:
+
+# Extract 'From' email address.
+FROM=`echo $FROM|sed -r "s/.*\W([A-Za-z0-9_.-]+@[A-Za-z0-9_.-]+).*/\1/"`
+
+:0hw
+SUBJECT=|formail -c -z -xSubject:
+
+# Prefix the subject with the From address.
+FS="${FROM}: ${SUBJECT}"
+
+# Copy of the message body
+:0bw
+BODY=|cat
+
+# Send it to the script that creates a GitHub issue.
+:0ic
+|$HOME/labeller/common/tools/create_alert_issue.py "-n" "${FS}" "${BODY}"
+
+# Archive mail to file.
+:0:
+$HOME/labeller/log/emails.log

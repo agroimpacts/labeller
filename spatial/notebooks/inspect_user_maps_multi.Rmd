@@ -1,0 +1,197 @@
+---
+title: "inspect_user_maps_multi"
+output: html_document
+---
+
+<style>
+.html-widget {
+    margin: auto;
+}
+</style>
+
+```{r echo = FALSE, message=FALSE, warning=FALSE}
+library(rmapaccuracy)
+library(dplyr)
+library(sf)
+library(stringr)
+library(leaflet)
+# 
+# rmarkdown::render("inspect_user_maps_nosample.Rmd", params = "ask", envir = new.env())
+
+
+instance <- "labeller3"  # change this to match your hostname
+read_dbase <- TRUE  # grab updated data? TRUE of FALSE
+new_sample <- TRUE  # randomly draw assignment (TRUE), keep previous (FALSE)
+dbase <- "Africa"  # which database? Africa or AfricaSandbox
+
+# Set up number of new samples, or the existing sampled would be loaded
+newsample <- 0
+
+connect <- read_dbase | new_sample
+
+host <- paste0(instance, ".crowdmapper.org")
+
+coninfo <- mapper_connect(host, user = "mapper")
+con <- coninfo$con
+```
+
+
+```{r message=FALSE, warning=FALSE, eval=connect, echo=FALSE}
+
+sample.file <- paste0("spatial/data/inspect_maps/inspect_user_maps_data_",instance,".rda")
+
+if (newsample > 0){
+  ## read database
+  assignments <- tbl(con, "assignment_data") %>%
+    filter(!is.null(completion_time)) %>% collect()
+  hits <- tbl(con, "hit_data") %>% collect()
+  kml_data <- tbl(con, "kml_data") %>% collect()
+  categories <- tbl(con, "categories") %>% collect()
+  # kml_data %>% arrange(desc(mapped_count))
+  
+  kml_assn_hits <- left_join(assignments, hits, by = "hit_id") %>%
+    select(assignment_id, name, worker_id) %>%
+    left_join(., kml_data %>% select(name, kml_type), by = "name")
+  
+  
+  nms <- kml_assn_hits %>% pull(name)
+  grids <- tbl(con, "master_grid") %>%
+    filter(name %in% nms)  %>% select(id, name, x, y, avail) %>%
+    collect()
+  
+  # random sample
+  i <- sample(1:nrow(kml_assn_hits), size = newsample)
+  grid_sel <- kml_assn_hits %>% slice(i) %>%
+    select(assignment_id, name, worker_id) %>%
+    left_join(., grids, by = "name") %>% data.table::data.table(.)
+  
+  
+  # scene
+  gid <- grid_sel$id
+  scene <- tbl(con, "scenes_data") %>% filter(cell_id %in% gid) %>% 
+    collect()
+  
+  grid_selo <- grid_sel %>% 
+    left_join(scene %>% filter(season == "OS") %>% select(cell_id, OS = tms_url),
+              by = c("id" = "cell_id")) %>%
+    left_join(scene %>% filter(season == "GS") %>% select(cell_id, GS = tms_url),
+              by = c("id" = "cell_id"))
+  
+  # database for all samples
+  gcs <- "+proj=longlat +datum=WGS84 +no_defs"
+  gpoly.all <- point_to_gridpoly(grid_sel, w = 0.005 / 2, gcs, gcs)
+  
+  falseparm <- "&redBand=3&greenBand=2&blueBand=1"
+  xyz.all <- cbind(grid_selo %>% select(name, OS, GS),
+                grid_selo["OS"] %>% lapply(function(x) paste0(x, falseparm)),
+                grid_selo["GS"] %>% lapply(function(x) paste0(x, falseparm))
+                )
+  names(xyz.all)[4:5] <- paste0(names(xyz.all)[4:5], "F")
+  xyz.all <- xyz.all[, c("name", "OS", "OSF", "GS", "GSF")]
+  
+  
+  save(grid_sel, grid_selo, gpoly.all, xyz.all, 
+       file = here::here(sample.file))
+}else{
+  categories <- tbl(con, "categories") %>% collect()
+  load(here::here(sample.file))
+}
+
+    ```
+    
+    
+    
+```{r, eval=TRUE, echo=FALSE, results="markup"}
+### single assignment
+check.id = 1
+print(paste("Assignment", check.id))
+
+grid.check = grid_selo[check.id,]
+print(paste0("Assignment: ", grid.check$assignment_id, "   Grid: ", grid.check$name, "   Worker: ", grid.check$worker_id))
+# writeLines(paste0("Comment: ", comment[[check.id]]))
+```
+
+
+
+```{r, echo = FALSE, fig.align="center"}
+
+sqls <- paste0("select name, category, geom_clean",
+               " FROM user_maps INNER JOIN categories ",
+               "USING (category) where assignment_id='",
+               grid.check$assignment_id, "' ",
+               "AND categ_group ='field'")
+
+xyz <- xyz.all %>% filter(name == grid.check$name) %>% select(OS, OSF, GS, GSF)
+
+xyz <- xyz[1,]
+gpoly <- gpoly.all %>% filter(name == grid.check$name)
+gpoly <- gpoly[1,]
+
+
+# plotting options
+slist <- list("color" = "white")
+label_opts <- labelOptions(noHide = TRUE, style = slist, direction = 'top',
+                           textOnly = TRUE)
+
+
+xy <- rgeos::gCentroid(as(raster::extent(gpoly), "SpatialPolygons"))@coords
+m <- leaflet() %>% addProviderTiles("Esri.WorldImagery") %>%
+  setView(xy[, "x"], xy[, "y"], zoom = 16)
+for(i in 1:length(xyz)) m <- m %>% addTiles(xyz[[i]], group = names(xyz)[i])
+m <- m %>%
+  addPolygons(data = gpoly, fill = FALSE, color = "white", group = "Cell",
+              weight = 2)
+
+
+
+fields <- DBI::dbGetQuery(con, gsub(", geom_clean", "", sqls))
+
+if(nrow(fields) > 0) {
+  user_polys <- st_read(con, query = sqls)
+  xy0 <- lapply(c(1:nrow(user_polys)), function(x) rgeos::gCentroid(as(raster::extent(user_polys[x,]), "SpatialPolygons"))@coords)
+  user_polys <- cbind(user_polys,
+                    "id" = do.call(rbind, str_split(user_polys$name, pattern = "_"))[,2],
+                     do.call(rbind,xy0))
+  
+  cols <- topo.colors(7)[which(categories$category %in% user_polys$category)]
+  pal <- colorFactor(cols, domain = categories$category)
+  m <- m %>% addPolygons(data = user_polys, 
+                         fillOpacity = 0.8, 
+                         fillColor = ~pal(category), 
+                         color = "grey", group = "Maps", weight = 1)
+  
+  m <- m %>% addLabelOnlyMarkers(xy[, "x"], xy[, "y"], label = gpoly$name,
+                               labelOptions = label_opts) %>%
+  addLabelOnlyMarkers(data = user_polys,
+                      lng = ~x, lat = ~y,
+                      label = ~id,
+                      labelOptions = labelOptions(noHide = TRUE, direction = 'top', textOnly = TRUE,
+                                                  style = list(
+                                                    "color" = "white",
+                                                    "font-size" = "150%"
+                                                  ))) %>%
+  addLayersControl(overlayGroups = c("Cell", "Maps", names(xyz)),
+                   options = layersControlOptions(collapsed = FALSE,
+                                                  autoZIndex = FALSE))
+} else {
+  user_polys <- NULL
+  m <- m %>% addLabelOnlyMarkers(xy[, "x"], xy[, "y"], label = gpoly$name,
+                               labelOptions = label_opts) %>%
+  addLayersControl(overlayGroups = c("Cell", "Maps", names(xyz)),
+                   options = layersControlOptions(collapsed = FALSE,
+                                                  autoZIndex = FALSE))
+}
+
+
+
+m
+```
+
+
+
+
+```{r, eval = read_dbase, echo = FALSE}
+
+DBI::dbDisconnect(con)
+```
+

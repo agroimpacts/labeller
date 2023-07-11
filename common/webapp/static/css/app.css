@@ -1,0 +1,15 @@
+    #clark_header { 
+        width: 381px; height: 71px; 
+        position: absolute; 
+        margin: 0 auto; 
+        background: #C33 url(../images/header_bg_small.jpg) no-repeat top left; }
+        
+        a#homelink { 
+            width: 199px; height: 71px; position: absolute; 
+            top: 0px; left: 0px; text-decoration: none; 
+            text-indent: -9999px; overflow: hidden; }
+        
+        a#tagline { 
+            width: 182px; height: 71px; position: absolute; 
+            top: 0px; left: 199px; text-decoration: none; 
+            text-indent: -9999px; overflow: hidden; }

@@ -1,0 +1,18 @@
+
+module postfix_run_script3 1.0;
+
+require {
+	type httpd_sys_content_t;
+	type postfix_local_t;
+	type httpd_sys_rw_content_t;
+	class dir remove_name;
+	class file { lock open };
+}
+
+#============= postfix_local_t ==============
+allow postfix_local_t httpd_sys_content_t:dir remove_name;
+allow postfix_local_t httpd_sys_content_t:file lock;
+
+#!!!! The file '/var/www/html/afmap_sandbox/mturk/MTurkMappingAfrica.pyc' is mislabeled on your system.  
+#!!!! Fix with $ restorecon -R -v /var/www/html/afmap_sandbox/mturk/MTurkMappingAfrica.pyc
+allow postfix_local_t httpd_sys_rw_content_t:file open;

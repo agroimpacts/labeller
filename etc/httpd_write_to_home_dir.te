@@ -1,0 +1,15 @@
+
+module httpd_write_to_home_dir 1.0;
+
+require {
+	type httpd_t;
+	type user_home_t;
+	class process execmem;
+	class dir write;
+}
+
+#============= httpd_t ==============
+
+#!!!! This avc can be allowed using the boolean 'httpd_execmem'
+allow httpd_t self:process execmem;
+allow httpd_t user_home_t:dir write;

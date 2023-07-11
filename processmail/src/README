@@ -1,0 +1,8 @@
+If selinux is running in enforced mode, it will be necessary to create several
+rules that will allow postfix scripts to execute (e.f., process_notifications.py).
+
+Execute:
+./selinux/setsebool.sh
+
+Then create each additional rule using semodule:
+semodule -i selinux/postfix_<rule>.pp

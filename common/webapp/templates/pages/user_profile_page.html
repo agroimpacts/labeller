@@ -1,0 +1,48 @@
+{% extends 'flask_user/public_base.html' %}
+
+{% block content %}
+<h1>User Profile</h1>
+
+<p></p><p><a href="{{ url_for('user.change_password') }}">Click here to Change Password</a></p>
+
+{% from "common/form_macros.html" import render_field, render_submit_field %}
+
+<form action="" method="POST" class="form" role="form">
+    {{ form.hidden_tag() }}
+
+    {{ render_field(form.email, value=current_user.email, tabindex=230) }}
+
+    {% if current_user.has_role('admin') %}
+        <h2>Personal Information</h2>
+        {{ render_field(form.first_name, value=current_user.first_name, tabindex=240) }}
+        {{ render_field(form.last_name, value=current_user.last_name, tabindex=250) }}
+    {% elif current_user.has_role('employer') %}
+        <h2>Company Details</h2>
+        {{ render_field(form.company_name, value=current_user.company_name, tabindex=240) }}
+        {{ render_field(form.street_address, value=current_user.street_address, tabindex=250) }}
+        {{ render_field(form.city, value=current_user.city, tabindex=260) }}
+        {{ render_field(form.state_province, value=current_user.state_province, tabindex=270) }}
+        {{ render_field(form.postal_code, value=current_user.postal_code, tabindex=280) }}
+        {{ render_field(form.country, value=current_user.country, tabindex=290) }}
+        {{ render_field(form.phone, value=current_user.phone, tabindex=300) }}
+        {{ render_field(form.fax, value=current_user.fax, tabindex=310) }}
+        <h2>Contact Information</h2>
+        {{ render_field(form.first_name, value=current_user.first_name, tabindex=320) }}
+        {{ render_field(form.last_name, value=current_user.last_name, tabindex=330) }}
+    {% elif current_user.has_role('employee') %}
+        <h2>Personal Information</h2>
+        {{ render_field(form.first_name, value=current_user.first_name, tabindex=240) }}
+        {{ render_field(form.last_name, value=current_user.last_name, tabindex=245) }}
+        {{ render_field(form.street_address, value=current_user.street_address, tabindex=250) }}
+        {{ render_field(form.city, value=current_user.city, tabindex=260) }}
+        {{ render_field(form.state_province, value=current_user.state_province, tabindex=270) }}
+        {{ render_field(form.postal_code, value=current_user.postal_code, tabindex=280) }}
+        {{ render_field(form.country, value=current_user.country, tabindex=290) }}
+        {{ render_field(form.phone, value=current_user.phone, tabindex=300) }}
+        {{ render_field(form.date_of_birth, value=current_user.date_of_birth, tabindex=310) }}
+    {% endif %}
+
+    {{ render_submit_field(form.submit, tabindex=360) }}
+</form>
+
+{% endblock %}
