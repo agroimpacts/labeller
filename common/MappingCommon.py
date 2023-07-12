@@ -128,7 +128,7 @@ class MappingCommon(object):
     def parseYaml(self, input_file):
         input_file = "%s/common/%s" % (self.projectRoot, input_file)
         with open(input_file, 'r') as yaml_file:
-            params = yaml.load(yaml_file)
+            params = yaml.load(yaml_file, Loader=yaml.FullLoader)
         return params
 
     # Retrieve a tunable parameter from the configuration table.
