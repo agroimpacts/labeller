@@ -1,13 +1,15 @@
 #! /bin/bash
-# Prepare database for new mapping geography
-# Replace existing master_grid with new one, and all Q type datasets
+# Prepare database for new mapping geography. This resets the entire database, 
+# except for the user data tables, and replaces it with a new master_grid, 
+# and all Q and I type datasets
 # This does the following: 
 #  - downloads grid, kml_static_grid, kml_static, qaqcfields csv from S3 
 #    to local migration folder
 #  - deletes from master_grid kml_data_static, qaqcfields, kml_data
-#  - copies from csvs into master_grid, kml_data_static
+#  - copies from csvs into master_grid, kml_data_static, the qual sections
 #  - copies geojson (pre) converted to csv into qaqcfields (b/c ogr has no
 #    postgresql driver)
+#  - resets sequences
 # Requires new main and accuracy grid csvs and qaqc geojson to be on S3
 
 if [ "${USER}" == "mapper" ]; then
@@ -108,13 +110,29 @@ qaqcfields=`basename ${tablearray[3]}`
 # Clear out most tables, doing most of clear_db.sh
 PGPASSWORD=$postgis_pw psql -U postgis $dbname <<EOD
 delete from user_maps;
+alter sequence user_maps_gid_seq restart;
+
 delete from accuracy_data;
+
 delete from assignment_history;
+
+delete from assignment_review;
+alter sequence assignment_review_rid_seq restart;
+
 delete from assignment_data;
+alter sequence assignment_data_assignment_id_seq restart;
+
 delete from qual_user_maps;
+alter sequence qual_user_maps_gid_seq restart;
+
 delete from qual_accuracy_data;
+
 delete from qual_assignment_data;
+alter sequence qual_assignment_data_assignment_id_seq restart;
+
 delete from hit_data;
+alter sequence hit_data_hit_id_seq restart;
+
 delete from scenes_data;
 delete from incoming_names;
 
@@ -150,16 +168,17 @@ update system_data set value=1 where key='firstAvailLine';
 EOD
 ## update master_grid set avail = 'T' where avail in ('I', 'Q', 'F');
 
-#for item in ${tablearray[*]}
-#do
-#    echo "Fetching" $item "from S3"
-#    filename=`basename $item`
-#    IFILE=$MIGRATEDIR/$filename
-#    rm $IFILE
-#    if [[ $? != 0 ]]; then
-#        exit 1
-#    fi
-#done
+# Delete downloaded files
+for item in ${tablearray[*]}
+do
+   echo "Deleting" $item "from local directory"
+   filename=`basename $item`
+   IFILE=$MIGRATEDIR/$filename
+   rm $IFILE
+   if [[ $? != 0 ]]; then
+       exit 1
+   fi
+done
 
 # keep
 # delete from kml_data_static;
