@@ -101,9 +101,9 @@ function init(gridJson, kmlName, assignmentId, tryNum, resultsAccepted, refJson,
             index = (i * 2) + j
             xyzLayer[index] = new ol.layer.Tile({
 	        zIndex: ZINDEX_BASE + (3 - index),
-                visible:  visible,
+            visible:  visible,
     		title: DESCRIPTION[index],
-   		source: new ol.source.XYZ({
+   		    source: new ol.source.XYZ({
     		    url: xyzAttribute[URL] + 
     			'&redBand=' + REDCOLOR[j] + 
     			'&greenBand=' + GREENCOLOR[j] + 
@@ -198,10 +198,11 @@ function init(gridJson, kmlName, assignmentId, tryNum, resultsAccepted, refJson,
     // Else, create reference map and worker map layers
     } else {
 	var wMapLayer = new ol.layer.Vector({
-            title: "Worker Map",zIndex: 103,
+            title: "Worker Map",
+            zIndex: 103,
             source: new ol.source.Vector({
-		features: new ol.format.GeoJSON().readFeatures(workJson),
-	    }),
+		        features: new ol.format.GeoJSON().readFeatures(workJson),
+	        }),
 	    style: new ol.style.Style({
                 fill: new ol.style.Fill({
                     color: 'rgba(0, 0, 255, 0.2)'
@@ -215,8 +216,9 @@ function init(gridJson, kmlName, assignmentId, tryNum, resultsAccepted, refJson,
 	map.getLayers().getArray()[0].getLayers().push(wMapLayer);
  
 	var rMapLayer = new ol.layer.Vector({
-            title: "Reference Map",                                                                                                                                                     zIndex: 102,                                                                                                                                                                source: new ol.source.Vector({
-		features: new ol.format.GeoJSON().readFeatures(refJson),
+            title: "Reference Map", 
+            zIndex: 102,                                                                                                                                                                source: new ol.source.Vector({
+		    features: new ol.format.GeoJSON().readFeatures(refJson),
 	    }),
 	    style: new ol.style.Style({
                 fill: new ol.style.Fill({
