@@ -19,19 +19,25 @@ else
     exit 1
 fi
 
+echo 
 echo "Executing this script will reset the database and create a new mapping"
 echo "geography and training reference grid." 
+echo
 echo "***All stored data will be deleted***"
 echo
 
 PROJDIR=/home/mapper/labeller
+# # pw directory
+# PGDIR=/home/mapper/labeller/pgsql
+export PGPASSFILE=$PROJDIR/pgsql/pgpassfile_mapper
+# echo $postgres_pw
+
 GEOGFILE=$PROJDIR/pgsql/data/geography_files_to_load.txt
-cat $GEOGFILE
 
 declare -a tablearray
 
 # Load file into array.
-if [ ! -f $GEOGFILE]; then
+if [ ! -f $GEOGFILE ]; then
     echo "'geography_file_to_load.txt' file not found! You need this file "\
     "to update the mapping geography. Create it and put each of the"\
     "file names in, one per line, in this order, starting with their"\
@@ -52,11 +58,6 @@ for item in ${tablearray[*]}
 do
     echo $item
 done
-
-# # pw directory
-# PGDIR=/home/mapper/labeller/pgsql
-export PGPASSFILE=$PROJDIR/pgsql/pgpassfile_mapper
-# echo $postgres_pw
 
 select yn in "No" "Yes"; do
     case $yn in
@@ -168,6 +169,17 @@ update system_data set value=1 where key='firstAvailLine';
 EOD
 ## update master_grid set avail = 'T' where avail in ('I', 'Q', 'F');
 
+echo 
+echo "The geography has now been reset!"
+echo 
+echo "Do you want to remove the downloaded files after the update?"
+select yn in "No" "Yes"; do
+    case $yn in
+        No ) exit;;
+        Yes ) break;;
+    esac
+done
+
 # Delete downloaded files
 for item in ${tablearray[*]}
 do
@@ -179,6 +191,9 @@ do
        exit 1
    fi
 done
+
+echo
+echo "All geography files deleted"
 
 # keep
 # delete from kml_data_static;
