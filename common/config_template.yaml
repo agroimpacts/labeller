@@ -13,6 +13,9 @@ labeller:
   MAIL_USE_TLS:
   PL_API_KEY: 
   SECRET_KEY: 
+  sentinelhub: instance_id
+  bing_key: 
+  mapbox_key: 
   slack_url: 
   aws_access: 
   aws_region: us-east-1
@@ -20,7 +23,7 @@ labeller:
   consensus_directory: /labels/ghana/
   consensus_heatmap_dir: heatmaps/ghana
   consensus_riskmap_dir:
-  db_host: mapper0.crowdmapper.org
+  db_host: labeller.crowdmapper.org
   db_password: 
   db_production_name: Africa
   db_url:

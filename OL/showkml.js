@@ -1,4 +1,5 @@
-function init(gridJson, kmlName, assignmentId, tryNum, resultsAccepted, refJson, workJson, xyzAttributes, snapTolerance) {
+function init(gridJson, kmlName, assignmentId, tryNum, resultsAccepted, refJson, 
+    workJson, imageAttributes, snapTolerance) {
 	
     var saveStrategyActive = false;
     var workerFeedback = false;
@@ -11,7 +12,59 @@ function init(gridJson, kmlName, assignmentId, tryNum, resultsAccepted, refJson,
     }
     var defaultCategory = undefined;
 
-    //
+    
+    // Base layer imagery
+    var googleLayer = new ol.layer.Tile({
+        title: 'Google satellite',
+        zIndex: 4,
+        type: 'base',
+        visible: true,
+        source: new ol.source.XYZ({
+            url: 'https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}' 
+        })
+    });
+
+    // ESRI
+    var esriLayer = new ol.layer.Tile({
+        title: 'ESRI imagery',
+        zIndex: 3,
+        type: 'base',
+        visible: true,
+        source: new ol.source.XYZ({
+            attributions: 'Tiles © <a href="https://services.arcgisonline.com/' +
+            'ArcGIS/rest/services/World_Imagery/MapServer">ArcGIS</a>',
+            url: 'https://server.arcgisonline.com/ArcGIS/rest/services/' +
+            'World_Imagery/MapServer/tile/{z}/{y}/{x}'
+        })
+    });
+
+    // Bing base layer.
+    var bingLayer = new ol.layer.Tile({
+        title: 'Bing Aerial',
+        zIndex: 2,
+        type: 'base',
+        visible: false,
+        source: new ol.source.BingMaps({
+            url: "http://ecn.t3.tiles.virtualearth.net/tiles/a{q}.jpeg?g=0&dir=dir_n'",
+            key: imageAttributes[1],
+            imagerySet: 'Aerial'
+        })
+    });
+
+    // MapBox
+    var mapboxkey = imageAttributes[2];
+    var mapboxLayer = new ol.layer.Tile({
+        title: 'Mapbox',
+        zIndex: 1,
+        type: 'base',
+        visible: false,
+        source: new ol.source.XYZ({
+            attributions: '&copy; <a href="https://www.mapbox.com/map-feedback/">Mapbox</a>',
+            tileSize: [512, 512],
+            url: `https://api.mapbox.com/styles/v1/mapbox/satellite-v9/tiles/{z}/{x}/{y}?access_token=${mapboxkey}`
+        })
+    });
+
     // *** Create map, overlays, and view ***
     //
     var map = new ol.Map({
@@ -42,13 +95,13 @@ function init(gridJson, kmlName, assignmentId, tryNum, resultsAccepted, refJson,
             }),
             // Create multi-band image layer group.
             new ol.layer.Group({
-                title: 'Satellite Image Overlays',
+                title: 'Images to Label',
                 layers: []
             }),
             // Create base layer group.
             new ol.layer.Group({
                 title: 'Base Layer',
-                layers: [esriLayer, bingLayer, mapboxLayer, dg1Layer]
+                layers: [googleLayer, esriLayer, bingLayer, mapboxLayer]
             })
         ],
         // Use the specified DOM element
@@ -68,70 +121,61 @@ function init(gridJson, kmlName, assignmentId, tryNum, resultsAccepted, refJson,
     });
     
     //
-    //*** Create the XYZ layers based on scenes_data table ***
+    //*** Create the image overlays ***
     //
     // Named constants (must match order in getXYZAttributes()).
-    var SEASON = 0;
-    var URL = 1;
+    // var SEASON = 0;
+    // var URL = 1;
 
-    var ZINDEX_BASE = 10;
-    var DESCRIPTION = ['Growing season false color', 
-                        'Growing season true color', 
-                        'Off-season false color', 
-                        'Off-season true color'];
-    // First indices are for false color.
-    // Second indices are for true color.
-    var REDCOLOR = ['3', '2'];
-    var GREENCOLOR = ['2', '1'];
-    var BLUECOLOR = ['1', '0'];
-    
-    // Desired order is: GS false, GS true, OS false, OS true.
+    var ZINDEX_BASE = 10;    
+    // Desired order is: True, False color
     // Array is assumed to be in GS/OS season order, one row for each.
     // URL is None if no overlay for that season.
-    var xyzLayer = [];
+    var DESCRIPTION = ['True color', 'False color'];
+    var COLORS = ['1_TRUE-COLOR', '2_FALSE-COLOR'];
+    // var COLORS = [imageAttributes[1][0], imageAttributes[1][1]];
+    var imageLayer = [];
     var visible = true;
-    for (var i = 0; i < xyzAttributes.length; i++) {
-	xyzAttribute = xyzAttributes[i];
-        // URL is null if no overlay for that season.
-        if (xyzAttribute[URL] === null) {
-	    continue;
-	}
-        // Create a false/true layer for this season.
-        for (var j = 0; j < REDCOLOR.length; j++) {
-            index = (i * 2) + j
-            xyzLayer[index] = new ol.layer.Tile({
-	        zIndex: ZINDEX_BASE + (3 - index),
+
+    var SHUB_INSTANCE_ID = imageAttributes[0];
+    for (var i = 0; i < DESCRIPTION.length; i++) {
+        imageLayer[i] = new ol.layer.Tile({
+            zIndex: ZINDEX_BASE + i,
             visible:  visible,
-    		title: DESCRIPTION[index],
-   		    source: new ol.source.XYZ({
-    		    url: xyzAttribute[URL] + 
-    			'&redBand=' + REDCOLOR[j] + 
-    			'&greenBand=' + GREENCOLOR[j] + 
-    			'&blueBand=' + BLUECOLOR[j]
-    		})
-    	    });    
-    	    // Add new XYZ layer to Satellite Image Overlays in Layer Switcher.
-    	    map.getLayers().getArray()[1].getLayers().push(xyzLayer[index]);
-            visible = false;
-        }
+            title: DESCRIPTION[i],
+            source: new ol.source.TileWMS({
+                url: `https://services.sentinel-hub.com/ogc/wms/${SHUB_INSTANCE_ID}`,
+                params: {
+                    "LAYERS": COLORS[i], // Layer name form Configure utility
+                    "FORMAT": "image/png",
+                    // "TRANSPARENT": true,
+                    // "MAXCC": 10,
+                    // "BBOX": gridJson.join(','),
+                    // "TIME":  startdate + '/' + enddate,
+                    "TILE": true
+                }
+            })
+        });
+        map.getLayers().getArray()[1].getLayers().push(imageLayer[i]);
+        visible = false;
     }
 
     // *** Create grid cell ***
-    // White bounding box KML layer: URL defined in configuration table.
+    // Bounding box KML layer
     // No title: so not in layer switcher.
     var gridSource = new ol.source.Vector({
-	features: new ol.format.GeoJSON().readFeatures(gridJson),
+	    features: new ol.format.GeoJSON().readFeatures(gridJson),
     });
     var gridLayer = new ol.layer.Vector({
 	zIndex: 100,
 	source: gridSource,
 	style: new ol.style.Style({
 	    fill: new ol.style.Fill({
-		color: 'rgba(255, 255, 255, 0.0)'
+		    color: 'rgba(255, 255, 255, 0.0)'
 	    }),
 	    stroke: new ol.style.Stroke({
-		color: 'rgba(255, 255, 255, 1.0)',
-		width: 2
+		    color: 'rgba(255, 255, 255, 1.0)',
+		    width: 2
 	    })
 	}),
     });

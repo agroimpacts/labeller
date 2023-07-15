@@ -329,50 +329,43 @@ class MappingCommon(object):
 
     # Create grid json for specified KML name, and diameter
     def getGridJson(self, kmlName, dlon, dlat):
-	# query database 
-	self.cur.execute("""select x, y from kml_data inner join master_grid using (name) 
-            where name = '%s'""" % kmlName)
-	(lon, lat) = self.cur.fetchone()
-	self.dbcon.commit()
-
-	# get grid
-	gf = gpd.GeoDataFrame({
-	    'lon': lon,
-	    'lat': lat
-	    }, index=[0])
-	gf['center'] = gf.apply(lambda x: shapely.geometry.Point(x['lon'], x['lat']), axis=1)
-        gf = gf.set_geometry('center')
-	gf['center'] = gf['center'].buffer(1)
-	gf['polygon'] = gf.apply(lambda x: shapely.affinity.scale(x['center'], dlon, dlat), axis=1)
-	gf = gf.set_geometry('polygon')
-
-	gf['grid'] = gf['polygon'].envelope	
-	gjson = gf \
-	    .set_geometry('grid') \
-	    .filter(items=['grid']) \
-	    .to_json()
-	return gjson
-
-
-    # Create XYZ attribute array for specified KML name.
-    # First row is for growing season, and 2nd row is for off-season.
-    # Only select the first DB row for each.
-    # If no row, specify None as the url.
-    def getXYZAttributes(self, kmlName):
-        urls = []
-        for season in ['GS', 'OS']:
-            self.cur.execute("""SELECT season, tms_url 
-                    FROM scenes_data sd INNER JOIN master_grid mg
-                    ON (sd.cell_id = mg.id)
-                    WHERE season = '%s' AND name = '%s'
-                    ORDER BY date_time DESC""" % (season, kmlName))
-            row = self.cur.fetchone()
-            if row is None:
-                row = [season, None]
-            urls.append(row) 
+        # query database 
+        self.cur.execute("""select x, y from kml_data inner join master_grid using (name) 
+                where name = '%s'""" % kmlName)
+        (lon, lat) = self.cur.fetchone()
         self.dbcon.commit()
-        # Using json.dumps because of embedded quotes in 2D array.
-        return json.dumps(urls)
+
+        # get grid
+        gf = gpd.GeoDataFrame({
+            'lon': lon,
+            'lat': lat
+            }, index=[0])
+        gf['center'] = gf.apply(lambda x: shapely.geometry.Point(x['lon'], x['lat']), axis=1)
+        gf = gf.set_geometry('center')
+        gf['center'] = gf['center'].buffer(1)
+        gf['polygon'] = gf.apply(lambda x: shapely.affinity.scale(x['center'], dlon, dlat), axis=1)
+        gf = gf.set_geometry('polygon')
+        gf['grid'] = gf['polygon'].envelope	
+        gjson = gf \
+            .set_geometry('grid') \
+            .filter(items=['grid']) \
+            .to_json()
+        return gjson
+
+    # Get key and attributes for image serving
+    def get_image_attributes(self):
+        params = self.parseYaml("config.yaml")
+        sentinelhub = params['labeller']['sentinelhub']
+        # sentinelhub_config1 = params['labeller']['sentinelhub_cfg1']
+        # sentinelhub_config2 = params['labeller']['sentinelhub_cfg2']
+        # sentinelhub_config = params['labeller']['sentinelhub_config']
+        bing_key = params['labeller']['bing_key']
+        mapbox_key = params['labeller']['mapbox_key']
+
+        return json.dumps(
+            [sentinelhub, bing_key, mapbox_key]
+        )
+        # return [sentinelhub, bing_key, mapbox_key]
 
     #
     # *** HIT-Related Functions ***
@@ -607,17 +600,17 @@ class MappingCommon(object):
 	    inner join hit_data using (hit_id) 
             where name='%s' and worker_id=%s 
 	    """ % (name, workerId))                                                                                               
-	assignment_id = self.cur.fetchone()[0]                                                                                    
-	self.dbcon.commit()                                                                                                  
-	# get qaqc                                                                                                           
-	sql = "select geom_clean from qaqcfields where name='%s'" % name
+        assignment_id = self.cur.fetchone()[0]                                                                                    
+        self.dbcon.commit()                                                                                                  
+    	# get qaqc                                                                                                           
+        sql = "select geom_clean from qaqcfields where name='%s'" % name
         qaqc_json = gpd.read_postgis(sql, self.dbcon, geom_col='geom_clean', crs='epsg:4326') \
             .to_json()
         # get user maps
         sql = "select geom from user_maps where assignment_id=%d" %(assignment_id)
         user_json = gpd.read_postgis(sql, self.dbcon, geom_col='geom', crs='epsg:4326') \
-            .to_json()                                                                                                       
-	return qaqc_json, user_json
+            .to_json()
+        return qaqc_json, user_json
  
     # Create a HIT for the specified KML ID.
     def createHit(self, kml=None, fwts=1, maxAssignments=1):

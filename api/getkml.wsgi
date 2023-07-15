@@ -19,6 +19,7 @@ def application(environ, start_response):
     # initiate refJson and workJson as empty
     refJson = '""'
     workJson = '""'
+    image_attributes = mapc.get_image_attributes()
 
     k = open(logFilePath + "/OL.log", "a")
     k.write("\ngetkml: datetime = %s\n" % now)
@@ -34,7 +35,7 @@ def application(environ, start_response):
     if len(kmlName) > 0:
         (kmlType, kmlTypeDescr) = mapc.getKmlType(kmlName)
         mapHint = mapc.querySingleValue("select hint from kml_data where name = '%s'" % kmlName)
-        xyzAttributes = mapc.getXYZAttributes(kmlName)
+        # xyzAttributes = mapc.getXYZAttributes(kmlName)
 
         # Training and field mapping cases.
         # These have an assignmentId.
@@ -80,7 +81,7 @@ def application(environ, start_response):
             # This has a workerId.
             try:
                 workerId = req.params['workerId']
-		refJson, workJson = mapc.getFeedbackJson(kmlName, workerId)
+                refJson, workJson = mapc.getFeedbackJson(kmlName, workerId)
                 instructions = 'Please select one of the overlays and click on a mapped field to see its category and comment labels.'
                 commentsVisible = 'none'
 
@@ -132,13 +133,12 @@ def application(environ, start_response):
                         crossorigin="anonymous">
                     </script>
                     <script src="https://cdnjs.cloudflare.com/ajax/libs/jsts/1.6.0/jsts.min.js"></script>
-                    <script type="text/javascript" src="/OL/baselayers.js"></script>
                     <script type="text/javascript" src="/OL/MAcontrolbar.js"></script>
                     <script type="text/javascript" src="/OL/showkml.js"></script>
                 </head>
                 <!-- Note: Don't add double quotes around xyzAttributes argument. -->
                 <!-- If we ever need to pass an empty list use: xyzAttributes = '[]' -->
-                <body onload='init(%(gridJson)s, "%(kmlName)s", "%(assignmentId)s", "%(tryNum)s", "%(resultsAccepted)s", %(refJson)s, %(workJson)s, %(xyzAttributes)s, "%(snapTolerance)s")'>
+                <body onload='init(%(gridJson)s, "%(kmlName)s", "%(assignmentId)s", "%(tryNum)s", "%(resultsAccepted)s", %(refJson)s, %(workJson)s, %(imageAttributes)s, "%(snapTolerance)s")'>
                     <form style='width:100%%;' name='mappingform' action='%(submitTo)s' method='POST' target='%(target)s'>
                         <div class='instructions'>
                             %(instructions)s
@@ -174,7 +174,7 @@ def application(environ, start_response):
                 </body>
             </html>
         ''' % {
-	    'gridJson': gridJson,
+            'gridJson': gridJson,
             'kmlName': kmlName,
             'hitId': hitId,
             'assignmentId': assignmentId,
@@ -187,11 +187,11 @@ def application(environ, start_response):
             'commentsVisible': commentsVisible,
             'mapHint': mapHint,
             'kmlMapHeight': kmlMapHeight,
-	    'refJson':refJson,
-	    'workJson': workJson,
+            'refJson':refJson,
+            'workJson': workJson,
             'select': select,
             'csrfToken': csrfToken,
-            'xyzAttributes': xyzAttributes,
+            'imageAttributes': image_attributes,
             'snapTolerance': snapTolerance
         }
         res.text = mainText
