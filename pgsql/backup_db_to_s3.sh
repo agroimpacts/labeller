@@ -44,10 +44,21 @@ else
     postgis_pw=$1
 fi
 
-
 # Set up some path variables
+# Get S3Path from config
+source "$PROJDIR/pgsql/parse_yaml.sh"
+config_array=$(parse_yaml $PROJDIR/common/config.yaml)
+
+# extract bucket
+for item in ${config_array[*]}
+do
+    if [[ $item == *"bucket"* ]]; then
+        bucket=`echo "$item" | cut -d'"' -f 2`
+    fi
+done
+
 DATE="$(date +%Y-%m-%d)"
-S3Path=s3://activemapper/backups/database/$HOSTNAME/$DATE
+S3Path=s3://$bucket/$HOSTNAME/$DATE
 WAYPath=$SDIR/s3backups
 
 # Backup the DB.

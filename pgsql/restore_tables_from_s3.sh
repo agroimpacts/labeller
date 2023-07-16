@@ -58,7 +58,14 @@ SDIR=`dirname $0`
 
 # Date and path for backup
 # DATE=$year-$month-$day
-S3Path=s3://activemapper/backups/database/$s3folder/$ymd
+# extract bucket
+for item in ${config_array[*]}
+do
+    if [[ $item == *"bucket"* ]]; then
+        bucket=`echo "$item" | cut -d'"' -f 2`
+    fi
+done
+S3Path=s3://$bucket/backups/database/$s3folder/$ymd
 
 # Fetch the table from S3
 echo $S3Path

@@ -21,8 +21,15 @@ else
 fi
 
 # Set up some path variables
+# get s3 bucket name from config
+for item in ${config_array[*]}
+do
+    if [[ $item == *"bucket"* ]]; then
+        bucket=`echo "$item" | cut -d'"' -f 2`
+    fi
+done
 DATE="$(date +%Y-%m-%d)"
-S3Path=s3://activemapper/backups/database/$HOSTNAME/$DATE
+S3Path=s3://$bucket/backups/database/$HOSTNAME/$DATE
 WAYPath=$SDIR/s3backups
 
 # Backup the DB.

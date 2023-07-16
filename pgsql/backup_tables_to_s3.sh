@@ -71,10 +71,18 @@ echo
 # fi
 
 # Date and path for backup
+# extract bucket
+for item in ${config_array[*]}
+do
+    if [[ $item == *"bucket"* ]]; then
+        bucket=`echo "$item" | cut -d'"' -f 2`
+    fi
+done
+
 # hostname=`hostname -s`
 DATE="$(date +%Y-%m-%d)"
 # HOUR="$(date +%H.%M)"
-S3Path=s3://activemapper/backups/database/$HOSTNAME/$DATE
+S3Path=s3://$bucket/$HOSTNAME/$DATE
 # S3Path=s3://activemapper/backups/database/$hostname/RUN_$RUNNO/$DATE
 WAYPath=$SDIR/s3backups
 # pgname="${hostname}_$dbname"

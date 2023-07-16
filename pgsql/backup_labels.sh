@@ -37,13 +37,21 @@ NAMES=`PGPASSWORD=$postgis_pw psql -AXt -d Africa -U postgis -c \
 "select name from incoming_names where run = $RUNNO;"`
 
 # Date and path for backup
+# extract bucket
+for item in ${config_array[*]}
+do
+    if [[ $item == *"bucket"* ]]; then
+        bucket=`echo "$item" | cut -d'"' -f 2`
+    fi
+done
+
 hostname=`hostname -s`
-S3Path=s3://activemapper/backups/labels/$hostname/RUN_$RUNNO/
+S3Path=s3://$bucket/$hostname/RUN_$RUNNO/
 
 for item in ${NAMES[*]}
 do
     # echo "Moving" $item
-    aws s3 mv s3://activemapper/labels/ $S3Path --recursive --exclude "*" \
+    aws s3 mv s3://$bucket/labels/ $S3Path --recursive --exclude "*" \
     --include "$item*"
 done
  

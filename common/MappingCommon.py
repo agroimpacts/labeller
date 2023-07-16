@@ -63,8 +63,8 @@ class MappingCommon(object):
     GeneralInquiryIssue = 'IssueGeneralInquiryLabel'
     WorkerInquiryIssue = 'IssueWorkerInquiryLabel'
     IssueTags = [(AlertIssue, 'IssueAlertAssignee'), 
-                    (GeneralInquiryIssue, 'IssueGeneralInquiryAssignee'), 
-                    (WorkerInquiryIssue, 'IssueWorkerInquiryAssignee')]
+                 (GeneralInquiryIssue, 'IssueGeneralInquiryAssignee'), 
+                 (WorkerInquiryIssue, 'IssueWorkerInquiryAssignee')]
     
     # Database column name constants
     ScoresCol = 'scores'

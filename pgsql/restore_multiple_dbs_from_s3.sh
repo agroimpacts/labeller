@@ -52,7 +52,14 @@ echo
 
 # Paths
 SDIR=`dirname $0`  # Script directory.
-s3path=s3:\/\/activemapper
+# extract bucket
+for item in ${config_array[*]}
+do
+    if [[ $item == *"bucket"* ]]; then
+        bucket=`echo "$item" | cut -d'"' -f 2`
+    fi
+done
+s3path=s3:\/\/$bucket
 
 # Make DB user postgis into a superuser temporarily.
 PGPASSWORD=$postgres_pw psql -f $SDIR/role_alter_su.sql -U postgres postgres

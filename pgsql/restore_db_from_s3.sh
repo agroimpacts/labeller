@@ -32,7 +32,14 @@ echo
 # Script directory.
 SDIR=`dirname $0`
 
-S3PATH=s3://activemapper/backups/database/$s3folder/$ymd
+# extract bucket
+for item in ${config_array[*]}
+do
+    if [[ $item == *"bucket"* ]]; then
+        bucket=`echo "$item" | cut -d'"' -f 2`
+    fi
+done
+S3PATH=s3://$bucket/backups/database/$s3folder/$ymd
 #S3FILE=$(aws s3 ls $S3PATH | grep $dump)
 S3FILE=$S3PATH/$dump.pgdump
 #if [ -z "$S3FILE" ]; then

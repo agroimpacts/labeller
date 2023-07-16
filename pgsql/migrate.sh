@@ -1,4 +1,5 @@
 #! /bin/bash
+# Note: this script is no longer used, but maintained for records
 
 if [ "${USER}" != "mapper" ]; then
     echo "$0 must be run as user mapper"
