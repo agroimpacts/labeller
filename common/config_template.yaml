@@ -17,6 +17,12 @@ labeller:
   bing_key: 
   mapbox_key: 
   slack_url: 
+  # AWS bucket for key inputs/outputs
+  bucket: 
+  # define HIT/kml type for loading initial sites
+  kml_type: 
+  sites: 
+  reset_initial: False
   aws_access: 
   aws_region: us-east-1
   aws_secret: 

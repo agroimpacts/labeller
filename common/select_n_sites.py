@@ -38,7 +38,7 @@ np.set_printoptions(precision=4)  # Display milliseconds for time stamps
 # Initialize Rlog file to record daemon start time, which kml ids written & when
 rlog_hdr = "Log of n sites selecting start, ids written & times" + \
            os.linesep
-logfname = log_file_path + "/generateSites.log"  # log file name
+logfname = log_file_path + "/generate_sites.log"  # log file name
 k = open(logfname, "a+")
 k.write(rlog_hdr)
 

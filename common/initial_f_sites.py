@@ -20,7 +20,7 @@ def main():
     config = mapc.parseYaml("config.yaml")
     aoiid = config['learner']['aoiid']
     log_file_path = mapc.projectRoot + "/log"
-    logfname = log_file_path + "/generateSites.log"  # log file name
+    logfname = log_file_path + "/generate_sites.log"  # log file name
     dberrfname = log_file_path + "/sites_dbase_error.log"
     
     # Get the parameters
