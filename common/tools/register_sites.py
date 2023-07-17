@@ -32,42 +32,32 @@ def register_sites(sites, bucket=None, kml_type='F', reset=False):
     # Set up logging
 
     # Record start time
-    log_hdr = "Registering " + kml_type + "sites staring at " + \
+    log_hdr = "Registering " + kml_type + "sites starting at " + \
         str(DT.now()) + os.linesep
     log = log_file_path + "/generate_sites.log"  # log file name
     k = open(log, "a+")
     k.write(log_hdr)
 
  
-    # Initial database error message
-    err_log_hdr = "Error messages from register_sites" + \
-              os.linesep
-
-    # Message 
-    error_log = log_file_path + "/sites_dbase_error.log"
-    k = open(error_log, "a+")
-    k.write(err_log_hdr)
-    k.close()
 
     # load csv
-    try:
-        if bucket:
-            s3 = boto3.client('s3')
-            obj = s3.get_object(Bucket=bucket, Key=sites)
-            df = pd.read_csv(obj['Body'])
-        else:
-            df = pd.read_csv(sites)          
+    if bucket:
+	s3 = boto3.client('s3')
+	obj = s3.get_object(Bucket=bucket, Key=sites)
+	df = pd.read_csv(obj['Body'])
+    else:
+	df = pd.read_csv(sites)          
 
-        k = open(log, "a+")
-        log_msg = "Read in {} sites to register from {}"\
-            .format(sites, kml_type)
-        k.write(log.msg)
-        k.close()
+    k = open(log, "a+")
+    log_msg = "Read in " + kml_type  + " sites to register from " + \
+	 sites + os.linesep
+    k.write(log_msg)
+    k.close()
 
-    except:
-        k = open(log, "a+")
-        k.write("{} not found or failed".format(sites))
-        k.close()
+#    except Exception as e: 
+#        k = open(log, "a+")
+#        k.write(sites + "not found or failed" + os.linesep)
+#        k.close()
 
     # Filter sites that match kml_type
     names = df["name"][df.avail == kml_type].to_list()
@@ -101,13 +91,12 @@ def register_sites(sites, bucket=None, kml_type='F', reset=False):
 
                 query = "update master_grid set avail='{}' where name in ({})"\
                     .format(kml_type, names_str)
-                print(query)
-                mapc.cur.execute()
+                mapc.cur.execute(query)
 
+                log_msg = kml_type + "sites registered at " + str(DT.now()) +\
+                    os.linesep
                 k = open(log, "a+")
-                log_msg = "{} {} sites registered at {}"\
-                    .format(sites, kml_type, DT.now())
-                k.write(log.msg)
+                k.write(log_msg)
                 k.close()
 
             except psycopg2.DatabaseError, err:
@@ -115,6 +104,8 @@ def register_sites(sites, bucket=None, kml_type='F', reset=False):
                 mapc.cur.execute("ROLLBACK")  # In order to recover the database
                 mapc.dbcon.commit()
 
+		# Log message 
+		error_log = log_file_path + "/sites_dbase_error.log"
                 error = "Register sites error: " + str(DT.now()) + " " +\
                     str(err)
                 k = open(error_log, "a+")
@@ -126,11 +117,9 @@ def register_sites(sites, bucket=None, kml_type='F', reset=False):
 
 def main():
     mapc = MappingCommon()
-    config_path = mapc.projectRoot + "/common/config.yaml"
-    params = mapc.parseYaml(config_path)
-
-    register_sites(params["sites"], params["bucket"], params["kml_type"], 
-                   params["reset_initial"])
+    params = mapc.parseYaml("config.yaml")["labeller"]
+    register_sites(sites=params["sites"], bucket=params["bucket"], 
+                   kml_type=params["kml_type"], reset=params["reset_initial"])
 
 if __name__ == "__main__":
     main()
