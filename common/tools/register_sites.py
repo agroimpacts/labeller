@@ -38,15 +38,13 @@ def register_sites(sites, bucket=None, kml_type='F', reset=False):
     k = open(log, "a+")
     k.write(log_hdr)
 
- 
-
     # load csv
     if bucket:
-	s3 = boto3.client('s3')
-	obj = s3.get_object(Bucket=bucket, Key=sites)
-	df = pd.read_csv(obj['Body'])
+        s3 = boto3.client('s3')
+        obj = s3.get_object(Bucket=bucket, Key=sites)
+        df = pd.read_csv(obj['Body'])
     else:
-	df = pd.read_csv(sites)          
+        df = pd.read_csv(sites)          
 
     k = open(log, "a+")
     log_msg = "Read in " + kml_type  + " sites to register from " + \
@@ -104,8 +102,8 @@ def register_sites(sites, bucket=None, kml_type='F', reset=False):
                 mapc.cur.execute("ROLLBACK")  # In order to recover the database
                 mapc.dbcon.commit()
 
-		# Log message 
-		error_log = log_file_path + "/sites_dbase_error.log"
+                # Log message 
+                error_log = log_file_path + "/sites_dbase_error.log"
                 error = "Register sites error: " + str(DT.now()) + " " +\
                     str(err)
                 k = open(error_log, "a+")
