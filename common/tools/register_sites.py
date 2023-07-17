@@ -1,3 +1,5 @@
+#! /usr/bin/python
+
 import os
 import pandas as pd
 import boto3
