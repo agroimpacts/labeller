@@ -132,7 +132,7 @@ function init(gridJson, kmlName, assignmentId, tryNum, resultsAccepted, refJson,
     // Array is assumed to be in GS/OS season order, one row for each.
     // URL is None if no overlay for that season.
     var DESCRIPTION = ['True color', 'False color'];
-    var COLORS = ['1_TRUE-COLOR', '2_FALSE-COLOR'];
+    var COLORS = ['TRUE-COLOR', 'FALSE-COLOR'];
     // var COLORS = [imageAttributes[1][0], imageAttributes[1][1]];
     var imageLayer = [];
     var visible = true;
