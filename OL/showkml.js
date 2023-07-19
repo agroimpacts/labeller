@@ -1,5 +1,5 @@
-function init(gridJson, kmlName, assignmentId, tryNum, resultsAccepted, refJson, 
-    workJson, imageAttributes, snapTolerance) {
+function init(gridJson, gridJson2, kmlName, assignmentId, tryNum, 
+    resultsAccepted, refJson, workJson, imageAttributes, snapTolerance) {
 	
     var saveStrategyActive = false;
     var workerFeedback = false;
@@ -130,6 +130,12 @@ function init(gridJson, kmlName, assignmentId, tryNum, resultsAccepted, refJson,
     var imageLayer = [];
     var visible = true;
 
+    // get BBOX for SHUB request
+    var image_box = new ol.source.Vector({
+        features: new ol.format.GeoJSON().readFeatures(gridJson2),
+    });
+    var bbox = bbox.getGeometry().getExtent();
+
     var SHUB_INSTANCE_ID = imageAttributes[0];
     var startdate = enddate = "2021-11-15"
     for (var i = 0; i < DESCRIPTION.length; i++) {
@@ -144,8 +150,8 @@ function init(gridJson, kmlName, assignmentId, tryNum, resultsAccepted, refJson,
                     "FORMAT": "image/png",
                     // "TRANSPARENT": true,
                     // "MAXCC": 10,
-                    // "BBOX": gridJson.join(','),
                     "TIME":  startdate + '/' + enddate,
+                    "BBOX": bbox.join(','),
                     "TILE": true
                 }
             })
