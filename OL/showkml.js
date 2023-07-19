@@ -29,7 +29,7 @@ function init(gridJson, kmlName, assignmentId, tryNum, resultsAccepted, refJson,
         title: 'ESRI imagery',
         zIndex: 3,
         type: 'base',
-        visible: true,
+        visible: false,
         source: new ol.source.XYZ({
             attributions: 'Tiles © <a href="https://services.arcgisonline.com/' +
             'ArcGIS/rest/services/World_Imagery/MapServer">ArcGIS</a>',
@@ -120,17 +120,10 @@ function init(gridJson, kmlName, assignmentId, tryNum, resultsAccepted, refJson,
         evt.preventDefault();
     });
     
-    //
     //*** Create the image overlays ***
-    //
-    // Named constants (must match order in getXYZAttributes()).
-    // var SEASON = 0;
-    // var URL = 1;
 
     var ZINDEX_BASE = 10;    
     // Desired order is: True, False color
-    // Array is assumed to be in GS/OS season order, one row for each.
-    // URL is None if no overlay for that season.
     var DESCRIPTION = ['True color', 'False color'];
     var COLORS = ['TRUE-COLOR', 'FALSE-COLOR'];
     // var COLORS = [imageAttributes[1][0], imageAttributes[1][1]];
@@ -138,6 +131,7 @@ function init(gridJson, kmlName, assignmentId, tryNum, resultsAccepted, refJson,
     var visible = true;
 
     var SHUB_INSTANCE_ID = imageAttributes[0];
+    var startdate = enddate = "2021-11-15"
     for (var i = 0; i < DESCRIPTION.length; i++) {
         imageLayer[i] = new ol.layer.Tile({
             zIndex: ZINDEX_BASE + i,
@@ -151,7 +145,7 @@ function init(gridJson, kmlName, assignmentId, tryNum, resultsAccepted, refJson,
                     // "TRANSPARENT": true,
                     // "MAXCC": 10,
                     // "BBOX": gridJson.join(','),
-                    // "TIME":  startdate + '/' + enddate,
+                    "TIME":  startdate + '/' + enddate,
                     "TILE": true
                 }
             })
