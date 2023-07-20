@@ -134,7 +134,17 @@ function init(gridJson, gridJson2, kmlName, assignmentId, tryNum,
     var image_box = new ol.source.Vector({
         features: new ol.format.GeoJSON().readFeatures(gridJson2),
     });
-    var bbox = bbox.getGeometry().getExtent();
+    //var bbox = image_box.getFeatures()[0].getGeometry().getExtent();
+
+    var features = image_box.getFeatures(); // get features
+    var extent = ol.extent.createEmpty();  // initialize extent
+
+    features.forEach(function(feature) {  // get extent of features
+        var geometry = feature.getGeometry();
+        ol.extent.extend(extent, geometry.getExtent());
+    });
+
+    var bbox = extent.join(',');  // extent to string format
 
     var SHUB_INSTANCE_ID = imageAttributes[0];
     var startdate = enddate = "2021-11-15"
@@ -150,9 +160,10 @@ function init(gridJson, gridJson2, kmlName, assignmentId, tryNum,
                     "FORMAT": "image/png",
                     // "TRANSPARENT": true,
                     // "MAXCC": 10,
-                    "TIME":  startdate + '/' + enddate,
-                    "BBOX": bbox.join(','),
-                    "TILE": true
+                    "TIME": startdate + '/' + enddate,
+                    "BBOX": bbox,
+                    "TILE": true,
+                    "CRS": "CRS:84"
                 }
             })
         });
@@ -164,7 +175,7 @@ function init(gridJson, gridJson2, kmlName, assignmentId, tryNum,
     // Bounding box KML layer
     // No title: so not in layer switcher.
     var gridSource = new ol.source.Vector({
-	    features: new ol.format.GeoJSON().readFeatures(gridJson),
+        features: new ol.format.GeoJSON().readFeatures(gridJson),
     });
     var gridLayer = new ol.layer.Vector({
 	zIndex: 100,
