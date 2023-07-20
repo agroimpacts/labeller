@@ -32,11 +32,10 @@ def application(environ, start_response):
         dlon = float(mapc.getConfiguration('KMLdlon'))
         dlat = float(mapc.getConfiguration('KMLdlat'))
     gridJson = mapc.getGridJson(kmlName, dlon, dlat)
-    gridJson2 = mapc.getGridJson(kmlName, dlon*2.56, dlat*2.56) 
+    # gridJson2 = mapc.getGridJson(kmlName, dlon*2.56, dlat*2.56) 
     if len(kmlName) > 0:
         (kmlType, kmlTypeDescr) = mapc.getKmlType(kmlName)
         mapHint = mapc.querySingleValue("select hint from kml_data where name = '%s'" % kmlName)
-        # xyzAttributes = mapc.getXYZAttributes(kmlName)
 
         # Training and field mapping cases.
         # These have an assignmentId.
@@ -139,7 +138,7 @@ def application(environ, start_response):
                 </head>
                 <!-- Note: Don't add double quotes around xyzAttributes argument. -->
                 <!-- If we ever need to pass an empty list use: xyzAttributes = '[]' -->
-                <body onload='init(%(gridJson)s, %(gridJson2)s, "%(kmlName)s", "%(assignmentId)s", "%(tryNum)s", "%(resultsAccepted)s", %(refJson)s, %(workJson)s, %(imageAttributes)s, "%(snapTolerance)s")'>
+                <body onload='init(%(gridJson)s, "%(kmlName)s", "%(assignmentId)s", "%(tryNum)s", "%(resultsAccepted)s", %(refJson)s, %(workJson)s, %(imageAttributes)s, "%(snapTolerance)s")'>
                     <form style='width:100%%;' name='mappingform' action='%(submitTo)s' method='POST' target='%(target)s'>
                         <div class='instructions'>
                             %(instructions)s
@@ -176,7 +175,6 @@ def application(environ, start_response):
             </html>
         ''' % {
             'gridJson': gridJson,
-            'gridJson2': gridJson2,
             'kmlName': kmlName,
             'hitId': hitId,
             'assignmentId': assignmentId,

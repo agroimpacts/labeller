@@ -1,5 +1,5 @@
-function init(gridJson, gridJson2, kmlName, assignmentId, tryNum, 
-    resultsAccepted, refJson, workJson, imageAttributes, snapTolerance) {
+function init(gridJson, kmlName, assignmentId, tryNum, resultsAccepted, 
+    refJson, workJson, imageAttributes, snapTolerance) {
 	
     var saveStrategyActive = false;
     var workerFeedback = false;
@@ -131,20 +131,20 @@ function init(gridJson, gridJson2, kmlName, assignmentId, tryNum,
     var visible = true;
 
     // get BBOX for SHUB request
-    var image_box = new ol.source.Vector({
-        features: new ol.format.GeoJSON().readFeatures(gridJson2),
-    });
-    //var bbox = image_box.getFeatures()[0].getGeometry().getExtent();
+    // var image_box = new ol.source.Vector({
+    //     features: new ol.format.GeoJSON().readFeatures(gridJson2222222222222222222222),
+    // });
+    // //var bbox = image_box.getFeatures()[0].getGeometry().getExtent();
 
-    var features = image_box.getFeatures(); // get features
-    var extent = ol.extent.createEmpty();  // initialize extent
+    // var features = image_box.getFeatures(); // get features
+    // var extent = ol.extent.createEmpty();  // initialize extent
 
-    features.forEach(function(feature) {  // get extent of features
-        var geometry = feature.getGeometry();
-        ol.extent.extend(extent, geometry.getExtent());
-    });
+    // features.forEach(function(feature) {  // get extent of features
+    //     var geometry = feature.getGeometry();
+    //     ol.extent.extend(extent, geometry.getExtent());
+    // });
 
-    var bbox = extent.join(',');  // extent to string format
+    // var bbox = extent.join(',');  // extent to string format
 
     var SHUB_INSTANCE_ID = imageAttributes[0];
     var startdate = enddate = "2021-11-15"
@@ -161,7 +161,7 @@ function init(gridJson, gridJson2, kmlName, assignmentId, tryNum,
                     // "TRANSPARENT": true,
                     // "MAXCC": 10,
                     "TIME": startdate + '/' + enddate,
-                    "BBOX": bbox,
+                    // "BBOX": bbox,
                     "TILE": true,
                     "CRS": "CRS:84"
                 }
