@@ -51,6 +51,7 @@ class MappingCommon(object):
     KmlQAQC = 'Q'                               # QAQC KML
     KmlFQAQC = 'F'                              # FQAQC KML
     KmlTraining = 'I'                           # Initial training KML
+    KmlEdit = 'E'                               # Labels to be edited
 
     # HIT assignment_history.event_type constants
     EVTApprovedAssignment = 'Approved Assignment' # Assignment was approved
@@ -199,6 +200,8 @@ class MappingCommon(object):
             kmlTypeDescr = 'non-QAQC'
         elif kmlType == MappingCommon.KmlTraining:
             kmlTypeDescr = 'training'
+        elif kmlType == MappingCommon.KmlEdit:
+            kmlTypeDescr = 'editing'
         return (kmlType, kmlTypeDescr)
 
     # Save and retrieve circular buffer into database.
@@ -352,51 +355,66 @@ class MappingCommon(object):
             .to_json()
         return gjson
     
-    def get_grid_json(self, kmlName, dlon, dlat):
-        # query database 
-        self.cur.execute(
-            """select x, y, kml_type, date from kml_data inner join master_grid 
-            using (name) where name = '%s'""" % kmlName
-        )
-        (lon, lat, kml_type, date) = self.cur.fetchone()
-        self.dbcon.commit()
+    # def get_grid_json(self, kmlName, dlon, dlat):
+    #     # query database 
+    #     self.cur.execute(
+    #         """select x, y, kml_type, date from kml_data inner join master_grid 
+    #         using (name) where name = '%s'""" % kmlName
+    #     )
+    #     (lon, lat, kml_type, date) = self.cur.fetchone()
+    #     self.dbcon.commit()
 
-        self.cur.execute(
-            "select value from configuration where key='instance" + kml_type +\
-            "'"
-        )
-        instance_id = self.cur.fetchone()
-        self.dbcon.commit()
+    #     self.cur.execute(
+    #         "select value from configuration where key='instance" + kml_type +\
+    #         "'"
+    #     )
+    #     instance_id = self.cur.fetchone()
+    #     self.dbcon.commit()
 
-        # get grid
-        gf = gpd.GeoDataFrame({
-            'lon': lon,
-            'lat': lat,
-            'date': date,
-            'instance_id': instance_id
-            }, index=[0])
-        gf['center'] = gf.apply(
-            lambda x: shapely.geometry.Point(x['lon'], x['lat']), axis=1
-        )
-        gf = gf.set_geometry('center')
-        gf['center'] = gf['center'].buffer(1)
-        gf['polygon'] = gf.apply(
-            lambda x: shapely.affinity.scale(x['center'], dlon, dlat), 
-            axis=1
-        )
-        gf = gf.set_geometry('polygon')
-        gf['grid'] = gf['polygon'].envelope	
+    #     # get grid
+    #     gf = gpd.GeoDataFrame({
+    #         'lon': lon,
+    #         'lat': lat,
+    #         'date': date,
+    #         'instance_id': instance_id
+    #         }, index=[0])
+    #     gf['center'] = gf.apply(
+    #         lambda x: shapely.geometry.Point(x['lon'], x['lat']), axis=1
+    #     )
+    #     gf = gf.set_geometry('center')
+    #     gf['center'] = gf['center'].buffer(1)
+    #     gf['polygon'] = gf.apply(
+    #         lambda x: shapely.affinity.scale(x['center'], dlon, dlat), 
+    #         axis=1
+    #     )
+    #     gf = gf.set_geometry('polygon')
+    #     gf['grid'] = gf['polygon'].envelope	
 
-        gjson = gf \
-            .set_geometry('grid') \
-            .filter(items=['grid', 'date', 'instance_id']) \
-            .to_json()
-        return gjson
+    #     gjson = gf \
+    #         .set_geometry('grid') \
+    #         .filter(items=['grid', 'date', 'instance_id']) \
+    #         .to_json()
+    #     return gjson
         
     # Get key and attributes for image serving
-    def get_image_attributes(self):
+    def get_image_attributes(self, kmlName):
         params = self.parseYaml("config.yaml")
-        sentinelhub = params['labeller']['sentinelhub']
+        kml_type, _ = self.getKmlType(kmlName)
+
+        self.cur.execute(
+            """select date from master_grid where name = '%s'""" % kmlName
+        )
+        date = self.cur.fetchone()
+
+        self.cur.execute(
+            "select value from configuration where key='instance%s'" % kml_type
+        )
+        sentinelhub = self.cur.fetchone()
+        self.dbcon.commit()
+
+        # sentinelhub = params['labeller']['sentinelhub']
+
+
         # sentinelhub_config1 = params['labeller']['sentinelhub_cfg1']
         # sentinelhub_config2 = params['labeller']['sentinelhub_cfg2']
         # sentinelhub_config = params['labeller']['sentinelhub_config']
@@ -404,7 +422,7 @@ class MappingCommon(object):
         mapbox_key = params['labeller']['mapbox_key']
 
         return json.dumps(
-            [sentinelhub, bing_key, mapbox_key]
+            [sentinelhub, bing_key, mapbox_key, date]
         )
         # return [sentinelhub, bing_key, mapbox_key]
 

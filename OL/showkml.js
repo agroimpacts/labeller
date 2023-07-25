@@ -147,7 +147,8 @@ function init(gridJson, kmlName, assignmentId, tryNum, resultsAccepted,
     // var bbox = extent.join(',');  // extent to string format
 
     var SHUB_INSTANCE_ID = imageAttributes[0];
-    var startdate = enddate = "2021-11-15"
+    // var startdate = enddate = "2021-11-15"
+    var startdate = enddate = imageAttributes[3];
     for (var i = 0; i < DESCRIPTION.length; i++) {
         imageLayer[i] = new ol.layer.Tile({
             zIndex: ZINDEX_BASE + i,
