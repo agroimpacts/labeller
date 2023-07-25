@@ -351,6 +351,44 @@ class MappingCommon(object):
             .filter(items=['grid']) \
             .to_json()
         return gjson
+    
+    def get_grid_json(self, kmlName, dlon, dlat):
+        # query database 
+        self.cur.execute(
+            """select x, y, kml_type, date from kml_data inner join master_grid 
+            using (name) where name = '%s'""" % kmlName
+        )
+        (lon, lat, date, collection) = self.cur.fetchone()
+        self.dbcon.commit()
+
+        if out_type == "grid":
+            # get grid
+            gf = gpd.GeoDataFrame({
+                'lon': lon,
+                'lat': lat,
+                'date': date,
+                'collection': collection
+                }, index=[0])
+            gf['center'] = gf.apply(
+                lambda x: shapely.geometry.Point(x['lon'], x['lat']), axis=1
+            )
+            gf = gf.set_geometry('center')
+            gf['center'] = gf['center'].buffer(1)
+            gf['polygon'] = gf.apply(
+                lambda x: shapely.affinity.scale(x['center'], dlon, dlat), axis=1
+            )
+            gf = gf.set_geometry('polygon')
+            gf['grid'] = gf['polygon'].envelope	
+
+            gjson = gf \
+                .set_geometry('grid') \
+                .filter(items=['grid', 'date', 'collection']) \
+                .to_json()
+            return gjson
+        
+        else: 
+
+            return json.dumps()
 
     # Get key and attributes for image serving
     def get_image_attributes(self):
