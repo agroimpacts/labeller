@@ -31,6 +31,7 @@ labeller:
   consensus_riskmap_dir:
   db_host: labeller.crowdmapper.org
   db_password: 
+  db_pgpassword:
   db_production_name: Africa
   db_url:
   db_username: 
