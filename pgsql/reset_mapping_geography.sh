@@ -155,8 +155,8 @@ EOD
 
 # copy in new files
 PGPASSWORD=$postgis_pw psql -U postgis $dbname <<EOD
-\copy master_grid(id, x, y, name, fwts, avail) FROM '$MIGRATEDIR/$maingrid' WITH DELIMITER ',' CSV HEADER;
-\copy master_grid(id, x, y, name, fwts, avail) FROM '$MIGRATEDIR/$trainrefgrid' WITH DELIMITER ',' CSV HEADER;
+\copy master_grid(id, x, y, name, fwts, avail, date) FROM '$MIGRATEDIR/$maingrid' WITH DELIMITER ',' CSV HEADER;
+\copy master_grid(id, x, y, name, fwts, avail, date) FROM '$MIGRATEDIR/$trainrefgrid' WITH DELIMITER ',' CSV HEADER;
 \copy kml_data_static (kml_type, name, hint) FROM '$MIGRATEDIR/$trainref' WITH DELIMITER ',' CSV HEADER;
 \copy qaqcfields (name, category, geom_clean) FROM '$MIGRATEDIR/$qaqcfields' WITH DELIMITER ',' CSV HEADER
 EOD
