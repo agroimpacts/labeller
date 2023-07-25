@@ -19,12 +19,13 @@ def application(environ, start_response):
     # initiate refJson and workJson as empty
     refJson = '""'
     workJson = '""'
-    image_attributes = mapc.get_image_attributes()
 
     k = open(logFilePath + "/OL.log", "a")
     k.write("\ngetkml: datetime = %s\n" % now)
 
     kmlName = req.params['kmlName']
+    image_attributes = mapc.get_image_attributes(kmlName)
+
     try:
         dlon = float(req.params['dlon'])
         dlat = float(req.params['dlat'])
