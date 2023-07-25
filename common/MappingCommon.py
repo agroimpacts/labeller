@@ -368,36 +368,31 @@ class MappingCommon(object):
         instance_id = self.cur.fetchone()
         self.dbcon.commit()
 
-        if out_type == "grid":
-            # get grid
-            gf = gpd.GeoDataFrame({
-                'lon': lon,
-                'lat': lat,
-                'date': date,
-                'instance_id': instance_id
-                }, index=[0])
-            gf['center'] = gf.apply(
-                lambda x: shapely.geometry.Point(x['lon'], x['lat']), axis=1
-            )
-            gf = gf.set_geometry('center')
-            gf['center'] = gf['center'].buffer(1)
-            gf['polygon'] = gf.apply(
-                lambda x: shapely.affinity.scale(x['center'], dlon, dlat), 
-                axis=1
-            )
-            gf = gf.set_geometry('polygon')
-            gf['grid'] = gf['polygon'].envelope	
+        # get grid
+        gf = gpd.GeoDataFrame({
+            'lon': lon,
+            'lat': lat,
+            'date': date,
+            'instance_id': instance_id
+            }, index=[0])
+        gf['center'] = gf.apply(
+            lambda x: shapely.geometry.Point(x['lon'], x['lat']), axis=1
+        )
+        gf = gf.set_geometry('center')
+        gf['center'] = gf['center'].buffer(1)
+        gf['polygon'] = gf.apply(
+            lambda x: shapely.affinity.scale(x['center'], dlon, dlat), 
+            axis=1
+        )
+        gf = gf.set_geometry('polygon')
+        gf['grid'] = gf['polygon'].envelope	
 
-            gjson = gf \
-                .set_geometry('grid') \
-                .filter(items=['grid', 'date', 'instance_id']) \
-                .to_json()
-            return gjson
+        gjson = gf \
+            .set_geometry('grid') \
+            .filter(items=['grid', 'date', 'instance_id']) \
+            .to_json()
+        return gjson
         
-        else: 
-
-            return json.dumps()
-
     # Get key and attributes for image serving
     def get_image_attributes(self):
         params = self.parseYaml("config.yaml")
