@@ -13,7 +13,6 @@ labeller:
   MAIL_USE_TLS:
   PL_API_KEY: 
   SECRET_KEY: 
-  sentinelhub: instance_id
   bing_key: 
   mapbox_key: 
   slack_url: 

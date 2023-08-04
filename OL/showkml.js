@@ -1,4 +1,4 @@
-function init(gridJson, kmlName, assignmentId, tryNum, resultsAccepted, 
+function init(gridJson, gridJson2, kmlName, assignmentId, tryNum, resultsAccepted, 
     refJson, workJson, imageAttributes, snapTolerance) {
 	
     var saveStrategyActive = false;
@@ -131,30 +131,29 @@ function init(gridJson, kmlName, assignmentId, tryNum, resultsAccepted,
     var visible = true;
 
     // get BBOX for SHUB request
-    var image_box = new ol.source.Vector({
-        features: new ol.format.GeoJSON().readFeatures(gridJson2),
-    });
-    var bbox = image_box.getFeatures()[0].getGeometry().getExtent();
-
-    // var features = image_box.getFeatures(); // get features
-    // var extent = ol.extent.createEmpty();  // initialize extent
-
-    // features.forEach(function(feature) {  // get extent of features
-    //     var geometry = feature.getGeometry();
-    //     ol.extent.extend(extent, geometry.getExtent());
-    // });
-
-    // var bbox = extent.join(',');  // extent to string format
-
+//    var image_box = new ol.source.Vector({
+//        features: new ol.format.GeoJSON().readFeatures(gridJson2)
+//    });
+//    //var bbox = image_box.getFeatures()[0].getGeometry().getExtent();
+//
+//    var features = image_box.getFeatures(); // get features
+//    var extent = ol.extent.createEmpty();  // initialize extent
+//
+//    features.forEach(function(feature) {  // get extent of features
+//         var geometry = feature.getGeometry();
+//         ol.extent.extend(extent, geometry.getExtent());
+//    });
+//
+//    var bbox = extent.join(',');  // extent to string format
+//
     var SHUB_INSTANCE_ID = imageAttributes[0];
-    // var startdate = enddate = "2021-11-15"
     var startdate = enddate = imageAttributes[3];
     for (var i = 0; i < DESCRIPTION.length; i++) {
         imageLayer[i] = new ol.layer.Tile({
             zIndex: ZINDEX_BASE + i,
             visible:  visible,
             title: DESCRIPTION[i],
-            extent: bbox,
+            //extent: [-1.887, 7.699, -1.880, 7.706],//bbox,
             source: new ol.source.TileWMS({
                 url: `https://services.sentinel-hub.com/ogc/wms/${SHUB_INSTANCE_ID}`,
                 params: {
