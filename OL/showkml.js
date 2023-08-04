@@ -1,4 +1,4 @@
-function init(gridJson, kmlName, assignmentId, tryNum, resultsAccepted, 
+function init(gridJson, gridJson2, kmlName, assignmentId, tryNum, resultsAccepted, 
     refJson, workJson, imageAttributes, instanceid, snapTolerance) {
 	
     var saveStrategyActive = false;
@@ -131,10 +131,10 @@ function init(gridJson, kmlName, assignmentId, tryNum, resultsAccepted,
     var visible = true;
 
     // get BBOX for SHUB request
-    var image_box = new ol.source.Vector({
-        features: new ol.format.GeoJSON().readFeatures(gridJson2),
-    });
-    var bbox = image_box.getFeatures()[0].getGeometry().getExtent();
+    // var image_box = new ol.source.Vector({
+    //     features: new ol.format.GeoJSON().readFeatures(gridJson2),
+    // });
+    // var bbox = image_box.getFeatures()[0].getGeometry().getExtent();
 
     // var features = image_box.getFeatures(); // get features
     // var extent = ol.extent.createEmpty();  // initialize extent
@@ -155,7 +155,7 @@ function init(gridJson, kmlName, assignmentId, tryNum, resultsAccepted,
             zIndex: ZINDEX_BASE + i,
             visible:  visible,
             title: DESCRIPTION[i],
-            extent: bbox,
+            //extent: [-1.887, 7.699, -1.880, 7.706],//bbox,
             source: new ol.source.TileWMS({
                 url: `https://services.sentinel-hub.com/ogc/wms/${SHUB_INSTANCE_ID}`,
                 params: {

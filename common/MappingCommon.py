@@ -360,16 +360,13 @@ class MappingCommon(object):
         params = self.parseYaml("config.yaml")
         kml_type, _ = self.getKmlType(kmlName)
 
-        self.cur.execute(
+        date = self.querySingleValue(
             """select date from master_grid where name = '%s'""" % kmlName
         )
-        date = self.cur.fetchone()
 
-        self.cur.execute(
+        sentinelhub = self.querySingleValue(
             "select value from configuration where key='instance%s'" % kml_type
         )
-        sentinelhub = self.cur.fetchone()
-        self.dbcon.commit()
 
         bing_key = params['labeller']['bing_key']
         mapbox_key = params['labeller']['mapbox_key']
