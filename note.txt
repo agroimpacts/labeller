@@ -1,0 +1,4 @@
+This is a version of labeller that was cloned on 16/7/2023 after running BFG repo cleaner to remove committed 
+credentials on GitHub.  See the original version in ~/Dropbox/projects/backups/labeller_16072023 for anything missing.  There are also repo versions in ..backups.. that were placed there prior to cleaning.
+
+Also note there is an orphaned commit that has a pull request from Azavea to containerize the webapp.  That has useful code that merits revisiting if the platform is ever upgraded.  
