@@ -125,46 +125,31 @@ function init(gridJson, gridJson2, kmlName, assignmentId, tryNum, resultsAccepte
     var ZINDEX_BASE = 10;    
     // Desired order is: True, False color
     var DESCRIPTION = ['True color', 'False color'];
-    var COLORS = ['TRUE-COLOR', 'FALSE-COLOR'];
-    // var COLORS = [imageAttributes[1][0], imageAttributes[1][1]];
+    var COLORS = ['TRUE-COLOR', 'FALSE-COLOR']; // could be read in programmatically
     var imageLayer = [];
     var visible = true;
 
     // get BBOX for SHUB request
-    // var image_box = new ol.source.Vector({
-    //     features: new ol.format.GeoJSON().readFeatures(gridJson2),
-    // });
-    // var bbox = image_box.getFeatures()[0].getGeometry().getExtent();
+    var image_box = new ol.source.Vector({
+        features: new ol.format.GeoJSON().readFeatures(gridJson2),
+    });
+    var bbox = image_box.getFeatures()[0].getGeometry().getExtent();
 
-    // var features = image_box.getFeatures(); // get features
-    // var extent = ol.extent.createEmpty();  // initialize extent
-
-    // features.forEach(function(feature) {  // get extent of features
-    //     var geometry = feature.getGeometry();
-    //     ol.extent.extend(extent, geometry.getExtent());
-    // });
-
-    // var bbox = extent.join(',');  // extent to string format
-
-    // var SHUB_INSTANCE_ID = imageAttributes[0];
+    //var SHUB_INSTANCE_ID = imageAttributes[0];
     var SHUB_INSTANCE_ID = instanceid;
-    // var startdate = enddate = "2021-11-15"
     var startdate = enddate = imageAttributes[3];
     for (var i = 0; i < DESCRIPTION.length; i++) {
         imageLayer[i] = new ol.layer.Tile({
             zIndex: ZINDEX_BASE + i,
             visible:  visible,
             title: DESCRIPTION[i],
-            //extent: [-1.887, 7.699, -1.880, 7.706],//bbox,
+            extent: bbox,
             source: new ol.source.TileWMS({
                 url: `https://services.sentinel-hub.com/ogc/wms/${SHUB_INSTANCE_ID}`,
                 params: {
-                    "LAYERS": COLORS[i], // Layer name form Configure utility
+                    "LAYERS": COLORS[i], // Layer name from Configure utility
                     "FORMAT": "image/png",
-                    // "TRANSPARENT": true,
-                    // "MAXCC": 10,
                     "TIME": startdate + '/' + enddate,
-                    // "BBOX": bbox,
                     "TILE": true,
                     "CRS": "CRS:84"
                 }
