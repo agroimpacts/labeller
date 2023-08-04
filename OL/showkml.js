@@ -1,5 +1,5 @@
 function init(gridJson, kmlName, assignmentId, tryNum, resultsAccepted, 
-    refJson, workJson, imageAttributes, snapTolerance) {
+    refJson, workJson, imageAttributes, instanceid, snapTolerance) {
 	
     var saveStrategyActive = false;
     var workerFeedback = false;
@@ -146,7 +146,8 @@ function init(gridJson, kmlName, assignmentId, tryNum, resultsAccepted,
 
     // var bbox = extent.join(',');  // extent to string format
 
-    var SHUB_INSTANCE_ID = imageAttributes[0];
+    // var SHUB_INSTANCE_ID = imageAttributes[0];
+    var SHUB_INSTANCE_ID = instanceid;
     // var startdate = enddate = "2021-11-15"
     var startdate = enddate = imageAttributes[3];
     for (var i = 0; i < DESCRIPTION.length; i++) {
