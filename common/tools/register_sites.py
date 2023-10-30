@@ -5,12 +5,13 @@ import pandas as pd
 import boto3
 import psycopg2
 from datetime import datetime as DT
+import numpy as np
 from MappingCommon import MappingCommon
 
-def register_sites(sites, bucket=None, kml_type='F', reset=False):
-    """
-    Gets grid sites from a csv and registers them in kml_data. Adapts 
-    @LLeiSong's register_f_sites for the simpler case of sites defined outside
+def register_sites(sites, bucket=None, kml_type='F', reset=False, n=500):
+     
+    """Gets grid sites from a csv and registers them in kml_data. Adapts 
+    LLeiSong's register_f_sites for the simpler case of sites defined outside
     of labeller's database. Can handle different types of HITs
 
     Arguments
@@ -25,6 +26,8 @@ def register_sites(sites, bucket=None, kml_type='F', reset=False):
     reset : bool
         Option to run function to reset database to previous state, removing 
         registered sites from kml_data and resetting avail in master_grid. 
+    n : int
+	Number of sites to draw at random when no sites file is provided
     """
     
     # database connection
@@ -41,16 +44,29 @@ def register_sites(sites, bucket=None, kml_type='F', reset=False):
     k.write(log_hdr)
 
     # load csv
-    if bucket:
+    if bucket and sites: 
+	print "Loading"  + sites + "from s3"
         s3 = boto3.client('s3')
         obj = s3.get_object(Bucket=bucket, Key=sites)
         df = pd.read_csv(obj['Body'])
-    else:
-        df = pd.read_csv(sites)          
-
+    elif not bucket and sites:
+	df = pd.read_csv(sites)          
+    elif not sites and kml_type=="F":
+	np.random.seed(1)
+	query = "select name from master_grid where avail='T'"
+   	mapc.cur.execute(query)
+    	rows = mapc.cur.fetchall()
+    	df = pd.DataFrame({
+	    "name": list(np.random.choice([r[0] for r in rows], n)),
+	    "avail": kml_type
+        })
+    else: 
+        print("Please try again")
+	
+    log_input = sites if sites else "main grid"
     k = open(log, "a+")
     log_msg = "Read in " + kml_type  + " sites to register from " + \
-	 sites + os.linesep
+	 log_input + os.linesep
     k.write(log_msg)
     k.close()
 

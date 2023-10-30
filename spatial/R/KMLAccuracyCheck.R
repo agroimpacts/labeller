@@ -9,10 +9,10 @@ prjsrid <- 102022
 count.acc.wt <- 0.1
 in.acc.wt <- 0.7  
 out.acc.wt <- 0.2  
-new.in.acc.wt <- 0.4 ## for new score
-new.out.acc.wt <- 0.2 ## for new score
-cate.acc.wt <- 0.2 ## for new score, categorical accuracy
-frag.acc.wt <- 0.1 ## for new score
+new.in.acc.wt <- 0.55 ## for new score
+new.out.acc.wt <- 0.0 ## for new score
+cate.acc.wt <- 0.125 ## for new score, categorical accuracy
+frag.acc.wt <- 0.225 ## for new score
 edge.acc.wt <- 0.1 ## for new score
 edge.buf <- 9 ## for new score, 3 planet pixels
 acc.switch <- 1  ### 5/2/2016 Changed to 1
