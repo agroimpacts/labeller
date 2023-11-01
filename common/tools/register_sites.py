@@ -35,7 +35,6 @@ def register_sites(sites, bucket=None, kml_type='F', reset=False, n=500):
     log_file_path = mapc.projectRoot + "/log"
 
     # Set up logging
-
     # Record start time
     log_hdr = "Registering " + kml_type + "sites starting at " + \
         str(DT.now()) + os.linesep
@@ -45,20 +44,20 @@ def register_sites(sites, bucket=None, kml_type='F', reset=False, n=500):
 
     # load csv
     if bucket and sites: 
-	print "Loading"  + sites + "from s3"
+	    print "Loading"  + sites + "from s3"
         s3 = boto3.client('s3')
         obj = s3.get_object(Bucket=bucket, Key=sites)
         df = pd.read_csv(obj['Body'])
     elif not bucket and sites:
-	df = pd.read_csv(sites)          
+    	df = pd.read_csv(sites)          
     elif not sites and kml_type=="F":
-	np.random.seed(1)
-	query = "select name from master_grid where avail='T'"
-   	mapc.cur.execute(query)
-    	rows = mapc.cur.fetchall()
-    	df = pd.DataFrame({
-	    "name": list(np.random.choice([r[0] for r in rows], n)),
-	    "avail": kml_type
+    	np.random.seed(1)
+    	query = "select name from master_grid where avail='T'"
+       	mapc.cur.execute(query)
+        	rows = mapc.cur.fetchall()
+        	df = pd.DataFrame({
+    	    "name": list(np.random.choice([r[0] for r in rows], n)),
+    	    "avail": kml_type
         })
     else: 
         print("Please try again")
@@ -66,7 +65,7 @@ def register_sites(sites, bucket=None, kml_type='F', reset=False, n=500):
     log_input = sites if sites else "main grid"
     k = open(log, "a+")
     log_msg = "Read in " + kml_type  + " sites to register from " + \
-	 log_input + os.linesep
+	    log_input + os.linesep
     k.write(log_msg)
     k.close()
 
@@ -77,7 +76,7 @@ def register_sites(sites, bucket=None, kml_type='F', reset=False, n=500):
 
     # Filter sites that match kml_type
     names = df["name"][df.avail == kml_type].to_list()
-    names_str = ', '.join("'{}'".format(name) for name in names)
+    names_str = ', '.join("'{}'".format(name[0]) for name in names)
 
     # Create database connection and query sites
     query = "select name from master_grid where name in ({}) and avail='T'"\
@@ -104,10 +103,12 @@ def register_sites(sites, bucket=None, kml_type='F', reset=False, n=500):
                     # print(query)
                     mapc.cur.execute(query, xy_tab)
                     mapc.dbcon.commit()
-
+                        
                 query = "update master_grid set avail='{}' where name in ({})"\
                     .format(kml_type, names_str)
                 mapc.cur.execute(query)
+                mapc.dbcon.commit()
+                
 
                 log_msg = kml_type + "sites registered at " + str(DT.now()) +\
                     os.linesep
