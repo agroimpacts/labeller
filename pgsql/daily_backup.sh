@@ -2,6 +2,7 @@
 
 # Child scripts are in the same directory
 SDIR=`dirname $0`
+PROJDIR=$HOME/labeller
 
 # Assumes we were called with '/home/${USER}/labeller/pgsql/<script_name>'.
 IFS='/'
@@ -22,6 +23,7 @@ fi
 
 # Set up some path variables
 # get s3 bucket name from config
+source "$PROJDIR/pgsql/parse_yaml.sh"
 for item in ${config_array[*]}
 do
     if [[ $item == *"bucket"* ]]; then

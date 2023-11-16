@@ -3,6 +3,7 @@
 
 # Script directory.
 SDIR=`dirname $0`
+PROJDIR=$HOME/labeller
 
 # directory check
  if [[ $SDIR != . ]]; then
@@ -52,14 +53,17 @@ config_array=$(parse_yaml $PROJDIR/common/config.yaml)
 # extract bucket
 for item in ${config_array[*]}
 do
+    echo $item
     if [[ $item == *"bucket"* ]]; then
         bucket=`echo "$item" | cut -d'"' -f 2`
     fi
 done
 
 DATE="$(date +%Y-%m-%d)"
-S3Path=s3://$bucket/$HOSTNAME/$DATE
+#S3Path=s3://$bucket/$HOSTNAME/$DATE
+S3Path=s3://$bucket/backups/database/$HOSTNAME/$DATE
 WAYPath=$SDIR/s3backups
+echo $S3Path
 
 # Backup the DB.
 echo "About to backup $DB database to $DB.pgdump. This could take some time..."
