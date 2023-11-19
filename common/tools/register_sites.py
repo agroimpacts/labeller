@@ -10,9 +10,9 @@ from MappingCommon import MappingCommon
 
 def register_sites(sites, bucket=None, kml_type='F', reset=False, n=500):
      
-    """Gets grid sites from a csv and registers them in kml_data. Adapts 
-    LLeiSong's register_f_sites for the simpler case of sites defined outside
-    of labeller's database. Can handle different types of HITs
+    """Gets grid sites from a csv or main grid and registers them in kml_data. 
+    Adapts LLeiSong's register_f_sites for the simpler case of sites defined 
+    outside of labeller's database. Can handle different types of HITs
 
     Arguments
     ---------
@@ -44,28 +44,33 @@ def register_sites(sites, bucket=None, kml_type='F', reset=False, n=500):
 
     # load csv
     if bucket and sites: 
-	    print "Loading"  + sites + "from s3"
         s3 = boto3.client('s3')
         obj = s3.get_object(Bucket=bucket, Key=sites)
         df = pd.read_csv(obj['Body'])
+	print "Loading" + len(sites) + sites + "from s3"
     elif not bucket and sites:
     	df = pd.read_csv(sites)          
+	print "Loading" + len(sites) + sites + "from local file"
     elif not sites and kml_type=="F":
     	np.random.seed(1)
     	query = "select name from master_grid where avail='T'"
        	mapc.cur.execute(query)
-        	rows = mapc.cur.fetchall()
-        	df = pd.DataFrame({
+        rows = mapc.cur.fetchall()
+        df = pd.DataFrame({
     	    "name": list(np.random.choice([r[0] for r in rows], n)),
     	    "avail": kml_type
         })
+	print "Loading " + str(n) + " " + kml_type + " sites from main grid"
     else: 
         print("Please try again")
 	
     log_input = sites if sites else "main grid"
+    nsites = str(len(sites)) if sites else str(n)
+
     k = open(log, "a+")
-    log_msg = "Read in " + kml_type  + " sites to register from " + \
-	    log_input + os.linesep
+    log_msg = "Read in " + nsites + " " + kml_type  + " sites from " + \
+	log_input + os.linesep
+    #print log_msg
     k.write(log_msg)
     k.close()
 
@@ -76,13 +81,14 @@ def register_sites(sites, bucket=None, kml_type='F', reset=False, n=500):
 
     # Filter sites that match kml_type
     names = df["name"][df.avail == kml_type].to_list()
-    names_str = ', '.join("'{}'".format(name[0]) for name in names)
+    names_str = "({})".format(', '.join("'{}'".format(name) for name in names))
 
     # Create database connection and query sites
-    query = "select name from master_grid where name in ({}) and avail='T'"\
+    query = "select name from master_grid where name in {} and avail='T'"\
         .format(names_str)
     mapc.cur.execute(query)
     rows = mapc.cur.fetchall()
+    mapc.dbcon.commit()
 
     # Option to reset database for testing
     if reset:
@@ -100,11 +106,11 @@ def register_sites(sites, bucket=None, kml_type='F', reset=False, n=500):
                     xy_tab = row + (kml_type, 0)
                     query = "insert into kml_data (name, kml_type, " +\
                         "mapped_count) values (%s, %s, %s);"
-                    # print(query)
+                    #print(xy_tab)
                     mapc.cur.execute(query, xy_tab)
                     mapc.dbcon.commit()
                         
-                query = "update master_grid set avail='{}' where name in ({})"\
+                query = "update master_grid set avail='{}' where name in {}"\
                     .format(kml_type, names_str)
                 mapc.cur.execute(query)
                 mapc.dbcon.commit()
@@ -130,13 +136,14 @@ def register_sites(sites, bucket=None, kml_type='F', reset=False, n=500):
                 k.close()
 
     if mapc.dbcon.closed == 0:
-        mapc.close()
+	mapc.close()
 
 def main():
     mapc = MappingCommon()
     params = mapc.parseYaml("config.yaml")["labeller"]
     register_sites(sites=params["sites"], bucket=params["bucket"], 
-                   kml_type=params["kml_type"], reset=params["reset_initial"])
+                   kml_type=params["kml_type"], reset=params["reset_initial"],
+		   n=params["n"])
 
 if __name__ == "__main__":
     main()
