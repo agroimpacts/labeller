@@ -53,7 +53,6 @@ config_array=$(parse_yaml $PROJDIR/common/config.yaml)
 # extract bucket
 for item in ${config_array[*]}
 do
-    echo $item
     if [[ $item == *"bucket"* ]]; then
         bucket=`echo "$item" | cut -d'"' -f 2`
     fi
