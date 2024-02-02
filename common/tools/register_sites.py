@@ -47,20 +47,22 @@ def register_sites(sites, bucket=None, kml_type='F', reset=False, n=500):
         s3 = boto3.client('s3')
         obj = s3.get_object(Bucket=bucket, Key=sites)
         df = pd.read_csv(obj['Body'])
-	print "Loading" + len(sites) + sites + "from s3"
+        print "Loading " + str(len(df)) + " from s3 file: " + \
+            os.path.basename(sites) 
     elif not bucket and sites:
-    	df = pd.read_csv(sites)          
-	print "Loading" + len(sites) + sites + "from local file"
+        df = pd.read_csv(sites)
+        print "Loading" + str(len(df)) + "from local file: " + \
+            os.path.basename(sites) 
     elif not sites and kml_type=="F":
-    	np.random.seed(1)
-    	query = "select name from master_grid where avail='T'"
-       	mapc.cur.execute(query)
+        np.random.seed(1)
+        query = "select name from master_grid where avail='T'"
+        mapc.cur.execute(query)
         rows = mapc.cur.fetchall()
         df = pd.DataFrame({
     	    "name": list(np.random.choice([r[0] for r in rows], n)),
     	    "avail": kml_type
         })
-	print "Loading " + str(n) + " " + kml_type + " sites from main grid"
+        print "Loading " + str(n) + " " + kml_type + " sites from main grid"
     else: 
         print("Please try again")
 	
@@ -143,7 +145,7 @@ def main():
     params = mapc.parseYaml("config.yaml")["labeller"]
     register_sites(sites=params["sites"], bucket=params["bucket"], 
                    kml_type=params["kml_type"], reset=params["reset_initial"],
-		   n=params["n"])
+                   n=params["n"])
 
 if __name__ == "__main__":
     main()
