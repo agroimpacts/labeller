@@ -82,7 +82,7 @@ def register_sites(sites, bucket=None, kml_type='F', reset=False, n=500):
 #        k.close()
 
     # Filter sites that match kml_type
-    names = df["name"][df.avail == kml_type].to_list()
+    names = df["name"].to_list()
     names_str = "({})".format(', '.join("'{}'".format(name) for name in names))
 
     # Create database connection and query sites
@@ -142,7 +142,7 @@ def register_sites(sites, bucket=None, kml_type='F', reset=False, n=500):
 
 def main():
     mapc = MappingCommon()
-    params = mapc.parseYaml("config.yaml")["labeller"]
+    params = mapc.parseYaml("config_add.yaml")
     register_sites(sites=params["sites"], bucket=params["bucket"], 
                    kml_type=params["kml_type"], reset=params["reset_initial"],
                    n=params["n"])

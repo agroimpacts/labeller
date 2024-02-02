@@ -32,33 +32,35 @@ def add_sites_to_main(sites, bucket=None, kml_type=None, reset=False):
     log_file_path = mapc.projectRoot + "/log"
 
     # Set up logging
+    ktype = kml_type if kml_type else "unnamed type"
+	
     # Record start time
-    log_hdr = "Registering " + kml_type + "sites starting at " + \
+    log_hdr = "Registering " + ktype + "sites starting at " + \
         str(DT.now()) + os.linesep
     log = log_file_path + "/add_sites_to_main.log"  # log file name
     k = open(log, "a+")
     k.write(log_hdr)
 
     # load csv
+    csv_name = os.path.basename(sites)
     if bucket and sites: 
         s3 = boto3.client('s3')
         obj = s3.get_object(Bucket=bucket, Key=sites)
         df = pd.read_csv(obj['Body'])
         print "Loading " + str(len(df)) + " from s3 file: " + \
-            os.path.basename(sites) 
+            csv_name
     elif not bucket and sites:
         df = pd.read_csv(sites)
         print "Loading" + str(len(df)) + "from local file: " + \
-            os.path.basename(sites) 
+            csv_name 
     else: 
         print("Please try again")
         
     nsites = str(len(df))
 
     k = open(log, "a+")
-    log_msg = "Read in " + nsites + " " + kml_type  + " sites from " + \
-        log_input + os.linesep
-    print log_msg
+    log_msg = "Read in " + nsites + " " + ktype + " sites from " + \
+        csv_name + os.linesep
     k.write(log_msg)
     k.close()
 
@@ -72,6 +74,7 @@ def add_sites_to_main(sites, bucket=None, kml_type=None, reset=False):
     
     # Option to reset database for testing - not tested
     if reset:
+	print "Resetting"
         query = "delete from master_grid where name in name in {}"\
             .format(names_str)
         mapc.cur.execute(query)
@@ -82,10 +85,10 @@ def add_sites_to_main(sites, bucket=None, kml_type=None, reset=False):
             print("Adding sites to main grid")
             added = 0
             exists = 0
+            query = "insert into master_grid (id, x, y, name, fwts, " +\
+		"avail, date) values (%s, %s, %s, %s, %s, %s, %s);"
             for _, row in df.iterrows():
                 xy_tab = tuple(row)
-                query = "insert into master_grid (id, x, y, name, fwts, " +\
-                    "avail, date) values (%s, %s, %s, %s, %s, %s, %s);"
                 
                 try: 
                     mapc.cur.execute(query, xy_tab)
@@ -102,8 +105,8 @@ def add_sites_to_main(sites, bucket=None, kml_type=None, reset=False):
                     k.close()
 
             log_msg = str(added) + " sites registered, " + str(exists) + \
-                " already existing from " + nsites + "total sites" + \
-                str(DT.now()) + os.linesep
+                " already existing from " + nsites + " total sites at " + \
+		str(DT.now()) + os.linesep + os.linesep
             k = open(log, "a+")
             k.write(log_msg)
             k.close()
