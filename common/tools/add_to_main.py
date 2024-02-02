@@ -82,7 +82,7 @@ def add_sites_to_main(sites, bucket=None, kml_type=None, reset=False):
             print("Adding sites to main grid")
             added = 0
             exists = 0
-            for _, row in .iloc[0:10].iterrows():
+            for _, row in df.iterrows():
                 xy_tab = tuple(row)
                 query = "insert into master_grid (id, x, y, name, fwts, " +\
                     "avail, date) values (%s, %s, %s, %s, %s, %s, %s);"
