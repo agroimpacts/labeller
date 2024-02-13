@@ -1,6 +1,7 @@
 #! /usr/bin/python
 
 import os
+import random
 import pandas as pd
 import boto3
 import psycopg2
@@ -8,7 +9,8 @@ from datetime import datetime as DT
 import numpy as np
 from MappingCommon import MappingCommon
 
-def register_sites(sites, bucket=None, kml_type='F', reset=False, n=500):
+def register_sites(sites, bucket=None, kml_type='F', reset=False, n=500, 
+		   randomize=True):
      
     """Gets grid sites from a csv or main grid and registers them in kml_data. 
     Adapts LLeiSong's register_f_sites for the simpler case of sites defined 
@@ -28,6 +30,8 @@ def register_sites(sites, bucket=None, kml_type='F', reset=False, n=500):
         registered sites from kml_data and resetting avail in master_grid. 
     n : int
 	Number of sites to draw at random when no sites file is provided
+    randomize : bool
+	Whether to randomly shuffle order of selection of sites
     """
     
     # database connection
@@ -58,6 +62,10 @@ def register_sites(sites, bucket=None, kml_type='F', reset=False, n=500):
         query = "select name from master_grid where avail='T'"
         mapc.cur.execute(query)
         rows = mapc.cur.fetchall()
+    	mapc.dbcon.commit()
+	
+	# note: random shuffling here doesn't carry to registration. Second step 
+	# added below to enable it 
         df = pd.DataFrame({
     	    "name": list(np.random.choice([r[0] for r in rows], n)),
     	    "avail": kml_type
@@ -91,6 +99,11 @@ def register_sites(sites, bucket=None, kml_type='F', reset=False, n=500):
     mapc.cur.execute(query)
     rows = mapc.cur.fetchall()
     mapc.dbcon.commit()
+
+    # randomize order, or not
+    if randomize:
+	random.seed(1)
+	random.shuffle(rows)
 
     # Option to reset database for testing
     if reset:
@@ -145,7 +158,7 @@ def main():
     params = mapc.parseYaml("config_add.yaml")
     register_sites(sites=params["sites"], bucket=params["bucket"], 
                    kml_type=params["kml_type"], reset=params["reset_initial"],
-                   n=params["n"])
+                   n=params["n"], randomize=params["randomize"])
 
 if __name__ == "__main__":
     main()
